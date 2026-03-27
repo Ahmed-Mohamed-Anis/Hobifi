@@ -1,0 +1,516 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hobby_haven/services/activity_service.dart';
+import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/models/activity_model.dart';
+import 'package:hobby_haven/theme.dart';
+import 'package:hobby_haven/supabase/supabase_config.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:hobby_haven/widgets/app_back_button.dart';
+
+class CreateActivityScreen extends StatefulWidget {
+  const CreateActivityScreen({super.key});
+
+  @override
+  State<CreateActivityScreen> createState() => _CreateActivityScreenState();
+}
+
+class _CreateActivityScreenState extends State<CreateActivityScreen> {
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _maxGuestsController = TextEditingController();
+  String _selectedCategory = 'Art';
+  bool _isInstantBooking = true;
+  bool _isPublic = true;
+  String? _imageUrl; // uploaded primary image public URL
+  final List<String> _imageUrls = []; // gallery images
+  bool _isUploading = false;
+
+  // Schedule state
+  DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
+
+  Future<String> _uploadBytes(Uint8List bytes, String filename, {String mimeType = 'image/jpeg'}) async {
+    final auth = context.read<AuthService>();
+    final userId = auth.currentUser?.id ?? 'anonymous';
+    final path = 'activities/$userId/${DateTime.now().millisecondsSinceEpoch}_$filename';
+    const targetBucket = 'activity-images';
+
+    try {
+      await SupabaseConfig.client.storage.from(targetBucket).uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+      );
+      return SupabaseConfig.client.storage.from(targetBucket).getPublicUrl(path);
+    } catch (e) {
+      debugPrint('Upload to bucket "$targetBucket" failed: $e');
+      if (e.toString().contains('Bucket not found') || e.toString().contains('relation "storage.buckets"')) {
+        throw Exception('Storage bucket not set up. Please apply the pending migration from the Supabase panel.');
+      }
+      throw Exception('Failed to upload image: ${e.toString()}');
+    }
+  }
+
+  // Pick multiple images and upload to Supabase Storage
+  Future<void> _pickAndUploadImages() async {
+    try {
+      setState(() => _isUploading = true);
+      final picker = ImagePicker();
+      final pickedList = await picker.pickMultiImage(maxWidth: 1920, imageQuality: 85);
+      if (pickedList.isEmpty) {
+        setState(() => _isUploading = false);
+        return;
+      }
+
+      for (final picked in pickedList) {
+        final bytes = await picked.readAsBytes();
+        final publicUrl = await _uploadBytes(bytes, picked.name);
+        _imageUrls.add(publicUrl);
+        _imageUrl ??= publicUrl; // ensure primary assigned
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Failed to pick/upload images: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload images: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isAfter(now) ? _selectedDate : now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
+  Future<void> _pickStartTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _startTime);
+    if (picked != null) setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _endTime);
+    if (picked != null) setState(() => _endTime = picked);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _locationController.dispose();
+    _priceController.dispose();
+    _maxGuestsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleCreate() async {
+    final activityService = context.read<ActivityService>();
+    final authService = context.read<AuthService>();
+    final now = DateTime.now();
+
+    try {
+      final startAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
+      final endAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
+      final dur = endAt.difference(startAt);
+      final hours = dur.inMinutes / 60.0;
+      final durationLabel = hours % 1 == 0 ? '${hours.toInt()}h' : '${hours.toStringAsFixed(1)}h';
+
+      final activity = ActivityModel(
+        id: 'activity_${now.millisecondsSinceEpoch}',
+        businessId: authService.currentUser!.id,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        category: _selectedCategory,
+        price: double.tryParse(_priceController.text) ?? 0,
+        location: _locationController.text.trim(),
+        imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
+        imageUrls: List<String>.from(_imageUrls),
+        rating: 5.0,
+        reviewCount: 0,
+        duration: durationLabel,
+        maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
+        spotsLeft: int.tryParse(_maxGuestsController.text) ?? 10,
+        dateTime: startAt, // backwards compatible primary datetime
+        startAt: startAt,
+        endAt: endAt,
+        isInstantBooking: _isInstantBooking,
+        isPublic: _isPublic,
+        features: const ['Equipment Included', 'Small Groups'],
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await activityService.createActivity(activity);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity created successfully!')));
+        context.pop();
+      }
+    } catch (e) {
+      debugPrint('Create activity error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create activity: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              padding: AppSpacing.paddingLg,
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.lightDivider)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const AppBackButton(),
+                  Text('Create Activity', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: AppColors.lightPrimaryText)),
+                  const SizedBox(width: 40),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: AppSpacing.paddingLg,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FormLabel(label: 'Photos'),
+                    Container(
+                      height: 180,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: AppColors.lightSurface,
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
+                        border: Border.all(color: AppColors.lightDivider, width: 2),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (_imageUrls.isEmpty)
+                              InkWell(
+                                onTap: _isUploading ? null : _pickAndUploadImages,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.add_a_photo_rounded, color: AppColors.lightPrimary, size: 32),
+                                    const SizedBox(height: 8),
+                                    Text('Upload Photos', style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimary, fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                              )
+                            else
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: ListView.separated(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: _imageUrls.length + 1,
+                                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                                        itemBuilder: (context, index) {
+                                          if (index == _imageUrls.length) {
+                                            return GestureDetector(
+                                              onTap: _isUploading ? null : _pickAndUploadImages,
+                                              child: Container(
+                                                width: 120,
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.lightBackground,
+                                                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                                                  border: Border.all(color: AppColors.lightDivider),
+                                                ),
+                                                child: const Center(child: Icon(Icons.add_rounded, color: AppColors.lightPrimary)),
+                                              ),
+                                            );
+                                          }
+                                          final url = _imageUrls[index];
+                                          return ClipRRect(
+                                            borderRadius: BorderRadius.circular(AppRadius.lg),
+                                            child: Image.network(url, width: 180, height: 156, fit: BoxFit.cover),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_isUploading)
+                              Container(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                child: const Center(child: CircularProgressIndicator()),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FormLabel(label: 'Activity Name'),
+                    TextField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(hintText: 'e.g. Urban Pottery Workshop'),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FormLabel(label: 'Category'),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          CategoryChip(label: 'Art', isSelected: _selectedCategory == 'Art', onTap: () => setState(() => _selectedCategory = 'Art')),
+                          CategoryChip(label: 'Sports', isSelected: _selectedCategory == 'Sports', onTap: () => setState(() => _selectedCategory = 'Sports')),
+                          CategoryChip(label: 'Music', isSelected: _selectedCategory == 'Music', onTap: () => setState(() => _selectedCategory = 'Music')),
+                          CategoryChip(label: 'Tech', isSelected: _selectedCategory == 'Tech', onTap: () => setState(() => _selectedCategory = 'Tech')),
+                          CategoryChip(label: 'Cooking', isSelected: _selectedCategory == 'Cooking', onTap: () => setState(() => _selectedCategory = 'Cooking')),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FormLabel(label: 'Description'),
+                    TextField(
+                      controller: _descriptionController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(hintText: 'Describe what makes this activity special...'),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FormLabel(label: 'Location'),
+                    TextField(
+                      controller: _locationController,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter street address or venue name',
+                        prefixIcon: Icon(Icons.location_on_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              FormLabel(label: 'Price (USD)'),
+                              TextField(
+                                controller: _priceController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  hintText: '0.00',
+                                  prefixIcon: Icon(Icons.payments_rounded),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              FormLabel(label: 'Max Guests'),
+                              TextField(
+                                controller: _maxGuestsController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  hintText: '10',
+                                  prefixIcon: Icon(Icons.group_rounded),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    // Schedule section
+                    FormLabel(label: 'Schedule'),
+                    Container(
+                      padding: AppSpacing.paddingMd,
+                      decoration: BoxDecoration(
+                        color: AppColors.lightSurface,
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
+                        border: Border.all(color: AppColors.lightDivider),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: _pickDate,
+                              icon: const Icon(Icons.event_rounded, color: AppColors.lightPrimary),
+                              label: Text('${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                  style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppColors.lightBackground,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: _pickStartTime,
+                              icon: const Icon(Icons.schedule_rounded, color: AppColors.lightPrimary),
+                              label: Text(_startTime.format(context), style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppColors.lightBackground,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: TextButton.icon(
+                              onPressed: _pickEndTime,
+                              icon: const Icon(Icons.schedule_rounded, color: AppColors.lightPrimary),
+                              label: Text(_endTime.format(context), style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppColors.lightBackground,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Container(
+                      padding: AppSpacing.paddingLg,
+                      decoration: BoxDecoration(
+                        color: AppColors.lightSurface,
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
+                        border: Border.all(color: AppColors.lightDivider),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Instant Booking', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: AppColors.lightPrimaryText)),
+                                    Text('Users don\'t need to wait for your approval', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText)),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _isInstantBooking,
+                                onChanged: (val) => setState(() => _isInstantBooking = val),
+                                activeColor: AppColors.lightPrimary,
+                              ),
+                            ],
+                          ),
+                          const Divider(color: AppColors.lightDivider),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Public Activity', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: AppColors.lightPrimaryText)),
+                                    Text('Visible to all HOBIFI users', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText)),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _isPublic,
+                                onChanged: (val) => setState(() => _isPublic = val),
+                                activeColor: AppColors.lightPrimary,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    ElevatedButton.icon(
+                      onPressed: _handleCreate,
+                      icon: const Icon(Icons.rocket_launch_rounded),
+                      label: const Text('Launch Activity'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.lightPrimary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 56),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.full)),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FormLabel extends StatelessWidget {
+  final String label;
+
+  const FormLabel({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(label, style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+class CategoryChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const CategoryChip({super.key, required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.lightPrimary : AppColors.lightSurface,
+            borderRadius: BorderRadius.circular(AppRadius.full),
+            border: Border.all(color: isSelected ? Colors.transparent : AppColors.lightDivider),
+          ),
+          child: Text(label, style: theme.textTheme.labelLarge?.copyWith(color: isSelected ? Colors.white : AppColors.lightSecondaryText, fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+}
