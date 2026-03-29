@@ -51,6 +51,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
   int _likesCount = 0;
   double _avgRating = 0.0;
   int _ratingsCount = 0;
+  List<Map<String, dynamic>> _attendees = [];
 
   @override
   void initState() {
@@ -148,12 +149,36 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         avgRating = totalRating / ratingsList.length;
       }
 
+      // Fetch attendees (users who booked)
+      List<Map<String, dynamic>> attendees = [];
+      try {
+        final bookingUsers = await SupabaseConfig.client
+            .from('bookings')
+            .select('user_id')
+            .eq('activity_id', activityId)
+            .inFilter('status', ['confirmed', 'pending']);
+        final userIds = (bookingUsers as List)
+            .map((b) => b['user_id'] as String)
+            .toSet()
+            .toList();
+        if (userIds.isNotEmpty) {
+          final users = await SupabaseConfig.client
+              .from('users')
+              .select('id, name, avatar_url')
+              .inFilter('id', userIds);
+          attendees = (users as List).cast<Map<String, dynamic>>();
+        }
+      } catch (e) {
+        debugPrint('Failed to fetch attendees: $e');
+      }
+
       if (mounted) setState(() {
         _paidBookings = bookingsList.length;
         _earned = earnings;
         _likesCount = likesList.length;
         _avgRating = avgRating;
         _ratingsCount = ratingsList.length;
+        _attendees = attendees;
       });
     } catch (e) {
       debugPrint('Failed to fetch activity stats: $e');
@@ -234,8 +259,43 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     if (picked != null) setState(() => _endTime = picked);
   }
 
+  String? _validateForm() {
+    if (_titleController.text.trim().isEmpty) return 'Please enter a title';
+    if (_titleController.text.trim().length < 3) return 'Title must be at least 3 characters';
+    if (_descriptionController.text.trim().isEmpty) return 'Please enter a description';
+    if (_locationController.text.trim().isEmpty) return 'Please enter a location';
+
+    final price = double.tryParse(_priceController.text);
+    if (price == null || price < 0) return 'Please enter a valid price';
+
+    final maxGuests = int.tryParse(_maxGuestsController.text);
+    if (maxGuests == null || maxGuests < 1) return 'Max guests must be at least 1';
+
+    // Check if reducing capacity below current bookings
+    if (_activity != null) {
+      final bookedCount = _activity!.maxGuests - _activity!.spotsLeft;
+      if (maxGuests < bookedCount) {
+        return 'Cannot reduce below $bookedCount (already booked). Cancel some bookings first.';
+      }
+    }
+
+    final startAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
+    final endAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
+
+    if (!endAt.isAfter(startAt)) return 'End time must be after start time';
+
+    return null;
+  }
+
   Future<void> _saveChanges() async {
     if (_activity == null) return;
+
+    final validationError = _validateForm();
+    if (validationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(validationError)));
+      return;
+    }
+
     final svc = context.read<ActivityService>();
     setState(() => _saving = true);
     try {
@@ -255,7 +315,10 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         category: _selectedCategory,
         price: price,
         maxGuests: maxGuests,
-        spotsLeft: maxGuests < _activity!.maxGuests ? _activity!.spotsLeft.clamp(0, maxGuests) : _activity!.spotsLeft,
+        spotsLeft: () {
+          final bookedCount = _activity!.maxGuests - _activity!.spotsLeft;
+          return (maxGuests - bookedCount).clamp(0, maxGuests);
+        }(),
         startAt: startAt,
         endAt: endAt,
         dateTime: startAt,
@@ -352,7 +415,126 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                         Expanded(child: _StatChip(icon: Icons.star_rounded, label: 'Rating', value: _ratingsCount > 0 ? '${_avgRating.toStringAsFixed(1)} ($_ratingsCount)' : 'N/A', iconColor: AppColors.lightAccent)),
                       ],
                     ),
+                    const SizedBox(height: AppSpacing.md),
+
+                    // Active / Paused toggle
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _isPublic
+                            ? Colors.green.withValues(alpha: 0.08)
+                            : Colors.orange.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _isPublic
+                              ? Colors.green.withValues(alpha: 0.3)
+                              : Colors.orange.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isPublic ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                            color: _isPublic ? Colors.green : Colors.orange,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _isPublic ? 'Active' : 'Paused',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: _isPublic ? Colors.green : Colors.orange,
+                                  ),
+                                ),
+                                Text(
+                                  _isPublic ? 'Visible to explorers' : 'Hidden from feed',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch.adaptive(
+                            value: _isPublic,
+                            onChanged: (v) => setState(() => _isPublic = v),
+                            activeColor: Colors.green,
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: AppSpacing.lg),
+
+                    // Who's Coming
+                    if (_attendees.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Text("Who's Coming", style: theme.textTheme.titleLarge),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_attendees.length}/${_activity?.maxGuests ?? '?'}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        height: 72,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _attendees.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 12),
+                          itemBuilder: (context, index) {
+                            final user = _attendees[index];
+                            final name = user['name'] as String? ?? 'Guest';
+                            final avatar = user['avatar_url'] as String?;
+                            return Column(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                  backgroundImage: (avatar != null && avatar.startsWith('http'))
+                                      ? NetworkImage(avatar)
+                                      : null,
+                                  child: avatar == null
+                                      ? Icon(Icons.person_rounded, size: 20, color: theme.colorScheme.primary)
+                                      : null,
+                                ),
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  width: 52,
+                                  child: Text(
+                                    name.split(' ').first,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
 
                     // Images
                     Text('Images', style: theme.textTheme.titleLarge),
@@ -403,10 +585,11 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                           value: _selectedCategory,
                           items: const [
                             DropdownMenuItem(value: 'Art', child: Text('Art')),
+                            DropdownMenuItem(value: 'Sports', child: Text('Sports')),
                             DropdownMenuItem(value: 'Music', child: Text('Music')),
-                            DropdownMenuItem(value: 'Outdoor', child: Text('Outdoor')),
                             DropdownMenuItem(value: 'Cooking', child: Text('Cooking')),
                             DropdownMenuItem(value: 'Tech', child: Text('Tech')),
+                            DropdownMenuItem(value: 'Outdoor', child: Text('Outdoor')),
                           ],
                           onChanged: (v) => setState(() => _selectedCategory = v ?? 'Art'),
                           decoration: const InputDecoration(labelText: 'Category'),
