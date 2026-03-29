@@ -8,6 +8,7 @@ class BookingModel {
   final double price;
   final DateTime dateTime;
   final BookingStatus status;
+  final DateTime? paymentExpiresAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -21,6 +22,7 @@ class BookingModel {
     required this.price,
     required this.dateTime,
     required this.status,
+    this.paymentExpiresAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -35,6 +37,7 @@ class BookingModel {
     price: (json['price'] as num).toDouble(),
     dateTime: DateTime.parse(json['date_time'] as String),
     status: BookingStatus.values.firstWhere((e) => e.name == json['status'], orElse: () => BookingStatus.pending),
+    paymentExpiresAt: json['payment_expires_at'] != null ? DateTime.parse(json['payment_expires_at'] as String) : null,
     createdAt: DateTime.parse(json['created_at'] as String),
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
@@ -49,6 +52,7 @@ class BookingModel {
     'price': price,
     'date_time': dateTime.toIso8601String(),
     'status': status.name,
+    if (paymentExpiresAt != null) 'payment_expires_at': paymentExpiresAt!.toIso8601String(),
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -63,6 +67,7 @@ class BookingModel {
     double? price,
     DateTime? dateTime,
     BookingStatus? status,
+    DateTime? paymentExpiresAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => BookingModel(
@@ -75,6 +80,7 @@ class BookingModel {
     price: price ?? this.price,
     dateTime: dateTime ?? this.dateTime,
     status: status ?? this.status,
+    paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
