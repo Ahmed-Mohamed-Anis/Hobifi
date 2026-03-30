@@ -24,12 +24,26 @@ serve(async (req: Request) => {
       throw new Error("Missing Paymob configuration");
     }
 
+    // ── Step 0: Authenticate the caller via JWT ─────────────────────────────
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace("Bearer ", "");
+    const { data: { user: callerUser }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError || !callerUser) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: invalid or missing token" }),
+        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+    const authenticatedUserId = callerUser.id;
+
     const body = await req.json();
     const {
       booking_id,
-      user_id,
       activity_id,
-      amount,
       activity_title,
       user_email,
       user_name,
@@ -37,6 +51,23 @@ serve(async (req: Request) => {
       payment_method = "card", // "card" | "wallet"
       wallet_phone,
     } = body;
+
+    // ── Look up the real price from the database — never trust the client ──
+    const { data: activityRow, error: activityError } = await supabase
+      .from("activities")
+      .select("price")
+      .eq("id", activity_id)
+      .single();
+
+    if (activityError || !activityRow) {
+      return new Response(
+        JSON.stringify({ error: "Activity not found" }),
+        { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+    const amount = activityRow.price as number;
+    // Use the authenticated user's ID, not the client-supplied one
+    const user_id = authenticatedUserId;
 
     // Validate wallet request
     if (payment_method === "wallet") {
@@ -167,22 +198,19 @@ serve(async (req: Request) => {
     }
 
     // ── Save / update payment record in DB ──────────────────────────────────
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const platformFee = Math.round(amount * 10) / 100;
+    const businessEarnings = Math.round((amount - platformFee) * 100) / 100;
 
-    const platformFee = amount * 0.1;
-    const businessEarnings = amount * 0.9;
-
-    // Avoid duplicate records on retry
+    // Check for existing active payment (pending/processing) for this booking
     const { data: existingPayment } = await supabase
       .from("payments")
-      .select("id")
+      .select("id, transaction_id")
       .eq("booking_id", booking_id)
-      .eq("status", "pending")
+      .in("status", ["pending", "processing"])
       .maybeSingle();
 
     if (existingPayment) {
+      // Update existing payment with new Paymob order/token
       const { error: updateError } = await supabase
         .from("payments")
         .update({
@@ -192,6 +220,7 @@ serve(async (req: Request) => {
         .eq("id", existingPayment.id);
       if (updateError) console.error("Failed to update payment record:", updateError);
     } else {
+      // Create new payment — the partial unique index prevents duplicates
       const { error: paymentError } = await supabase.from("payments").insert({
         booking_id,
         user_id,
@@ -203,7 +232,14 @@ serve(async (req: Request) => {
         status: "pending",
         payment_method,
       });
-      if (paymentError) console.error("Failed to create payment record:", paymentError);
+      if (paymentError) {
+        // If duplicate key error, fetch the existing one
+        if (paymentError.code === "23505") {
+          console.log("Duplicate payment prevented — using existing record");
+        } else {
+          console.error("Failed to create payment record:", paymentError);
+        }
+      }
     }
 
     return new Response(JSON.stringify(responsePayload), {
