@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 
@@ -215,6 +217,38 @@ class BookingService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Failed to update booking status: $e');
       rethrow;
+    }
+  }
+
+  /// Cancel a booking via the server-side edge function.
+  /// Enforces 24-hour cancellation policy and handles refunds.
+  Future<Map<String, dynamic>> cancelBookingServerSide(String bookingId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/process-cancellation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${SupabaseConfig.auth.currentSession?.accessToken ?? SupabaseConfig.anonKey}',
+          'apikey': SupabaseConfig.anonKey,
+        },
+        body: jsonEncode({'booking_id': bookingId}),
+      );
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        // Reload bookings to reflect the change
+        final userId = SupabaseConfig.auth.currentUser?.id;
+        if (userId != null) {
+          await loadUserBookings(userId, force: true);
+        }
+        return data;
+      } else {
+        return {'success': false, 'error': data['error'] ?? 'Cancellation failed'};
+      }
+    } catch (e) {
+      debugPrint('Failed to cancel booking: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 

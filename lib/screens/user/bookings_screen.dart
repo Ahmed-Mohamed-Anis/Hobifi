@@ -8,7 +8,6 @@ import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:intl/intl.dart';
-import 'package:hobby_haven/widgets/app_back_button.dart';
 
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
@@ -62,8 +61,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
                   children: [
                     Row(
                       children: [
-                        const AppBackButton(),
-                        const SizedBox(width: 12),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -171,14 +168,20 @@ class BookingCard extends StatelessWidget {
       booking.status == BookingStatus.pending;
 
   Future<void> _showCancelDialog(BuildContext context) async {
+    // 24h cancellation policy check
+    final hoursUntil = booking.dateTime.difference(DateTime.now()).inHours;
+    final isLate = hoursUntil < 24;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
         return AlertDialog(
-          title: const Text('Cancel Booking'),
+          title: Text(isLate ? 'Late Cancellation' : 'Cancel Booking'),
           content: Text(
-            'Are you sure you want to cancel "${booking.activityTitle}"? This action cannot be undone.',
+            isLate
+                ? 'This activity is less than 24 hours away. Cancelling now means no refund. Are you sure?'
+                : 'Are you sure you want to cancel "${booking.activityTitle}"? This action cannot be undone.',
           ),
           actions: [
             TextButton(
@@ -200,20 +203,14 @@ class BookingCard extends StatelessWidget {
         final bookingService = context.read<BookingService>();
         final activityService = context.read<ActivityService>();
 
-        // Cancel the booking
-        await bookingService.updateBookingStatus(booking.id, BookingStatus.cancelled);
+        final result = await bookingService.cancelBookingServerSide(booking.id);
 
-        // Restore the spot on the activity
-        final activity = activityService.getActivityById(booking.activityId);
-        if (activity != null) {
-          await activityService.updateActivity(
-            activity.copyWith(spotsLeft: activity.spotsLeft + 1),
-          );
-        }
+        await activityService.refreshActivities();
 
         if (context.mounted) {
+          final message = result['message'] as String? ?? 'Booking cancelled';
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Booking cancelled successfully')),
+            SnackBar(content: Text(message)),
           );
         }
       } catch (e) {
