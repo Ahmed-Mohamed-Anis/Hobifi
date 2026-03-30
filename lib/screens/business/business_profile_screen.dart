@@ -9,6 +9,7 @@ import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
+import 'package:hobby_haven/utils/input_sanitizer.dart';
 
 class BusinessProfileScreen extends StatefulWidget {
   const BusinessProfileScreen({super.key});
@@ -19,6 +20,43 @@ class BusinessProfileScreen extends StatefulWidget {
 
 class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
   bool _changingPhoto = false;
+  bool _editingBio = false;
+  bool _savingBio = false;
+  late TextEditingController _bioController;
+
+  @override
+  void initState() {
+    super.initState();
+    _bioController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthService>();
+      if (auth.currentUser != null) {
+        _bioController.text = auth.currentUser!.bio ?? '';
+        context.read<BookingService>().loadBusinessBookings(auth.currentUser!.id);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _bioController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveBio() async {
+    final auth = context.read<AuthService>();
+    setState(() => _savingBio = true);
+    final ok = await auth.updateProfile(bio: InputSanitizer.sanitize(_bioController.text, maxLength: 200));
+    if (mounted) {
+      setState(() {
+        _savingBio = false;
+        _editingBio = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Bio updated' : 'Failed to update bio')),
+      );
+    }
+  }
 
   Future<void> _pickAndUploadAvatar() async {
     final auth = context.read<AuthService>();
@@ -60,7 +98,7 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
 
     final user = auth.currentUser;
     final activities = user == null ? [] : activityService.getActivitiesByBusinessId(user.id);
-    final bookings = bookingService.bookings;
+    final bookings = bookingService.businessBookings;
 
     return Scaffold(
       body: SafeArea(
@@ -72,11 +110,6 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
                 padding: AppSpacing.paddingLg,
                 child: Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                      onPressed: () => context.pop(),
-                    ),
-                    const SizedBox(width: 4),
                     Text('Profile', style: theme.textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface)),
                   ],
                 ),
@@ -174,6 +207,70 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
                           ],
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      // Bio section
+                      if (_editingBio)
+                        Column(
+                          children: [
+                            TextField(
+                              controller: _bioController,
+                              maxLines: 3,
+                              maxLength: 200,
+                              decoration: InputDecoration(
+                                hintText: 'Tell people about your business...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: _savingBio
+                                      ? null
+                                      : () => setState(() {
+                                            _editingBio = false;
+                                            _bioController.text = user?.bio ?? '';
+                                          }),
+                                  child: const Text('Cancel'),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: _savingBio ? null : _saveBio,
+                                  child: _savingBio
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Text('Save'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () => setState(() => _editingBio = true),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.onSurface.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              (user?.bio != null && user!.bio!.isNotEmpty) ? user.bio! : 'Tap to add a bio...',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: (user?.bio != null && user!.bio!.isNotEmpty)
+                                    ? colorScheme.onSurface
+                                    : colorScheme.onSurface.withValues(alpha: 0.4),
+                                fontStyle: (user?.bio != null && user!.bio!.isNotEmpty)
+                                    ? FontStyle.normal
+                                    : FontStyle.italic,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 20),
                       // Stats row
                       Row(

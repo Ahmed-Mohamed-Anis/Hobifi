@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hobby_haven/models/rating_model.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
+import 'package:hobby_haven/utils/input_sanitizer.dart';
 
 class RatingService extends ChangeNotifier {
   List<RatingModel> _ratings = [];
@@ -78,13 +79,15 @@ class RatingService extends ChangeNotifier {
     try {
       final existing = getUserRatingForActivity(userId, activityId);
 
+      final sanitizedComment = (comment != null && comment.isNotEmpty)
+          ? InputSanitizer.sanitize(comment, maxLength: 500)
+          : comment;
+
       if (existing != null) {
-        // Update existing rating
-        final updates = <String, dynamic>{'rating': rating};
-        if (comment != null) updates['comment'] = comment;
+        // Update existing rating — always include comment to allow clearing
         await SupabaseService.update(
           'ratings',
-          updates,
+          {'rating': rating, 'comment': sanitizedComment ?? ''},
           filters: {'id': existing.id},
         );
       } else {
@@ -94,7 +97,9 @@ class RatingService extends ChangeNotifier {
           'activity_id': activityId,
           'rating': rating,
         };
-        if (comment != null && comment.isNotEmpty) payload['comment'] = comment;
+        if (sanitizedComment != null && sanitizedComment.isNotEmpty) {
+          payload['comment'] = sanitizedComment;
+        }
         await SupabaseService.insert('ratings', payload);
       }
 

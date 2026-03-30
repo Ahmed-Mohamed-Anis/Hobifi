@@ -11,6 +11,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
+import 'package:hobby_haven/screens/business/activity_preview_screen.dart';
+import 'package:hobby_haven/utils/input_sanitizer.dart';
 
 class CreateActivityScreen extends StatefulWidget {
   const CreateActivityScreen({super.key});
@@ -31,6 +33,20 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   String? _imageUrl; // uploaded primary image public URL
   final List<String> _imageUrls = []; // gallery images
   bool _isUploading = false;
+
+  // Feature tags
+  static const List<String> _availableTags = [
+    'Equipment Included',
+    'Small Groups',
+    'Beginner Friendly',
+    'All Ages',
+    'Materials Included',
+    'Outdoor',
+    'Indoor',
+    'Wheelchair Accessible',
+    'Refreshments Included',
+  ];
+  final Set<String> _selectedTags = {'Equipment Included', 'Small Groups'};
 
   // Schedule state
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
@@ -120,7 +136,81 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     super.dispose();
   }
 
+  String? _validateForm() {
+    if (_titleController.text.trim().isEmpty) return 'Please enter a title';
+    if (_titleController.text.trim().length < 3) return 'Title must be at least 3 characters';
+    if (_titleController.text.trim().length > 100) return 'Title must be under 100 characters';
+    if (_descriptionController.text.trim().isEmpty) return 'Please enter a description';
+    if (_locationController.text.trim().isEmpty) return 'Please enter a location';
+
+    final price = double.tryParse(_priceController.text);
+    if (price == null || price < 0) return 'Please enter a valid price';
+
+    final maxGuests = int.tryParse(_maxGuestsController.text);
+    if (maxGuests == null || maxGuests < 1) return 'Max guests must be at least 1';
+
+    final startAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
+    final endAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
+
+    if (!endAt.isAfter(startAt)) return 'End time must be after start time';
+    if (startAt.isBefore(DateTime.now())) return 'Activity date must be in the future';
+
+    return null;
+  }
+
+  ActivityModel _buildDraftActivity() {
+    final authService = context.read<AuthService>();
+    final now = DateTime.now();
+    final startAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
+    final endAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
+    final dur = endAt.difference(startAt);
+    final hours = dur.inMinutes / 60.0;
+    final durationLabel = hours % 1 == 0 ? '${hours.toInt()}h' : '${hours.toStringAsFixed(1)}h';
+
+    return ActivityModel(
+      id: 'preview',
+      businessId: authService.currentUser?.id ?? '',
+      title: _titleController.text.trim(),
+      description: _descriptionController.text.trim(),
+      category: _selectedCategory,
+      price: double.tryParse(_priceController.text) ?? 0,
+      location: _locationController.text.trim(),
+      imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
+      imageUrls: List<String>.from(_imageUrls),
+      rating: 0.0,
+      reviewCount: 0,
+      duration: durationLabel,
+      maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
+      spotsLeft: int.tryParse(_maxGuestsController.text) ?? 10,
+      dateTime: startAt,
+      startAt: startAt,
+      endAt: endAt,
+      isInstantBooking: _isInstantBooking,
+      isPublic: _isPublic,
+      features: _selectedTags.toList(),
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  void _handlePreview() {
+    final error = _validateForm();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ActivityPreviewScreen(activity: _buildDraftActivity())),
+    );
+  }
+
   Future<void> _handleCreate() async {
+    final error = _validateForm();
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+
     final activityService = context.read<ActivityService>();
     final authService = context.read<AuthService>();
     final now = DateTime.now();
@@ -135,14 +225,14 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       final activity = ActivityModel(
         id: 'activity_${now.millisecondsSinceEpoch}',
         businessId: authService.currentUser!.id,
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
+        title: InputSanitizer.sanitize(_titleController.text, maxLength: 100),
+        description: InputSanitizer.sanitize(_descriptionController.text, maxLength: 2000),
         category: _selectedCategory,
         price: double.tryParse(_priceController.text) ?? 0,
         location: _locationController.text.trim(),
         imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
         imageUrls: List<String>.from(_imageUrls),
-        rating: 5.0,
+        rating: 0.0,
         reviewCount: 0,
         duration: durationLabel,
         maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
@@ -152,7 +242,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
         endAt: endAt,
         isInstantBooking: _isInstantBooking,
         isPublic: _isPublic,
-        features: const ['Equipment Included', 'Small Groups'],
+        features: _selectedTags.toList(),
         createdAt: now,
         updatedAt: now,
       );
@@ -275,6 +365,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                     FormLabel(label: 'Activity Name'),
                     TextField(
                       controller: _titleController,
+                      maxLength: 100,
                       decoration: const InputDecoration(hintText: 'e.g. Urban Pottery Workshop'),
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -286,8 +377,9 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                           CategoryChip(label: 'Art', isSelected: _selectedCategory == 'Art', onTap: () => setState(() => _selectedCategory = 'Art')),
                           CategoryChip(label: 'Sports', isSelected: _selectedCategory == 'Sports', onTap: () => setState(() => _selectedCategory = 'Sports')),
                           CategoryChip(label: 'Music', isSelected: _selectedCategory == 'Music', onTap: () => setState(() => _selectedCategory = 'Music')),
-                          CategoryChip(label: 'Tech', isSelected: _selectedCategory == 'Tech', onTap: () => setState(() => _selectedCategory = 'Tech')),
                           CategoryChip(label: 'Cooking', isSelected: _selectedCategory == 'Cooking', onTap: () => setState(() => _selectedCategory = 'Cooking')),
+                          CategoryChip(label: 'Tech', isSelected: _selectedCategory == 'Tech', onTap: () => setState(() => _selectedCategory = 'Tech')),
+                          CategoryChip(label: 'Outdoor', isSelected: _selectedCategory == 'Outdoor', onTap: () => setState(() => _selectedCategory = 'Outdoor')),
                         ],
                       ),
                     ),
@@ -296,6 +388,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                     TextField(
                       controller: _descriptionController,
                       maxLines: 4,
+                      maxLength: 2000,
                       decoration: const InputDecoration(hintText: 'Describe what makes this activity special...'),
                     ),
                     const SizedBox(height: AppSpacing.lg),
@@ -449,6 +542,42 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
+                    // Feature tags
+                    Text('Features', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: AppSpacing.sm),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _availableTags.map((tag) {
+                        final selected = _selectedTags.contains(tag);
+                        return FilterChip(
+                          label: Text(tag),
+                          selected: selected,
+                          onSelected: (val) {
+                            setState(() {
+                              if (val) {
+                                _selectedTags.add(tag);
+                              } else {
+                                _selectedTags.remove(tag);
+                              }
+                            });
+                          },
+                          selectedColor: theme.colorScheme.primary.withValues(alpha: 0.15),
+                          checkmarkColor: theme.colorScheme.primary,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    OutlinedButton.icon(
+                      onPressed: _handlePreview,
+                      icon: const Icon(Icons.visibility_rounded),
+                      label: const Text('Preview'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.full)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     ElevatedButton.icon(
                       onPressed: _handleCreate,
                       icon: const Icon(Icons.rocket_launch_rounded),
