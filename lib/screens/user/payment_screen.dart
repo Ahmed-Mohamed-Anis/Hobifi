@@ -203,7 +203,7 @@ class _PaymentScreenState extends State<PaymentScreen>
         activityTitle: widget.activityTitle,
         userEmail: user.email,
         userName: user.name,
-        userPhone: user.phone ?? '+201000000000',
+        userPhone: user.phone ?? '',
         paymentMethod: 'wallet',
         walletPhone: _walletPhoneController.text.trim(),
       );

@@ -118,6 +118,23 @@ serve(async (req: Request) => {
     const firstName = nameParts[0] || "User";
     const lastName = nameParts.slice(1).join(" ") || "User";
 
+    // Require real user data — no dummy fallbacks
+    const billingEmail = user_email || callerUser.email;
+    if (!billingEmail) {
+      return new Response(
+        JSON.stringify({ error: "User email is required for payment" }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+
+    const billingPhone = user_phone || "+201000000000"; // Phone optional for card
+    if (payment_method === "wallet" && (!wallet_phone || wallet_phone.length < 10)) {
+      return new Response(
+        JSON.stringify({ error: "Valid wallet phone number is required" }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+
     // Use wallet integration ID for wallet payments, card integration ID for cards
     const integrationId = payment_method === "wallet"
       ? parseInt(PAYMOB_WALLET_INTEGRATION_ID!)
@@ -133,12 +150,12 @@ serve(async (req: Request) => {
         order_id: orderId,
         billing_data: {
           apartment: "NA",
-          email: user_email || "user@example.com",
+          email: billingEmail,
           floor: "NA",
           first_name: firstName,
           street: "NA",
           building: "NA",
-          phone_number: user_phone || "+201000000000",
+          phone_number: billingPhone,
           shipping_method: "NA",
           postal_code: "NA",
           city: "Cairo",
