@@ -9,6 +9,7 @@ class PaymentModel {
   final String transactionId;
   final PaymentStatus status;
   final PaymentMethod paymentMethod;
+  final RefundStatus refundStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -23,6 +24,7 @@ class PaymentModel {
     required this.transactionId,
     required this.status,
     required this.paymentMethod,
+    this.refundStatus = RefundStatus.none,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -44,6 +46,10 @@ class PaymentModel {
       (e) => e.name == json['payment_method'],
       orElse: () => PaymentMethod.card,
     ),
+    refundStatus: RefundStatus.values.firstWhere(
+      (e) => e.name == (json['refund_status'] as String? ?? 'none'),
+      orElse: () => RefundStatus.none,
+    ),
     createdAt: DateTime.parse(json['created_at'] as String),
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
@@ -59,6 +65,7 @@ class PaymentModel {
     'transaction_id': transactionId,
     'status': status.name,
     'payment_method': paymentMethod.name,
+    'refund_status': refundStatus.name,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -74,6 +81,7 @@ class PaymentModel {
     String? transactionId,
     PaymentStatus? status,
     PaymentMethod? paymentMethod,
+    RefundStatus? refundStatus,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => PaymentModel(
@@ -87,6 +95,7 @@ class PaymentModel {
     transactionId: transactionId ?? this.transactionId,
     status: status ?? this.status,
     paymentMethod: paymentMethod ?? this.paymentMethod,
+    refundStatus: refundStatus ?? this.refundStatus,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -110,4 +119,10 @@ enum PaymentMethod {
   card,
   wallet,
   applePay
+}
+
+enum RefundStatus {
+  none,
+  requested,
+  processed
 }
