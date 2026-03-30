@@ -61,94 +61,103 @@ class _PaymentScreenState extends State<PaymentScreen>
     super.dispose();
   }
 
-  // When user returns to app (from browser or wallet app), check payment status
+  // When user returns to app (from browser or wallet app), start polling
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
         !_paymentCompleted &&
         !_paymentFailed) {
-      _checkPaymentStatus();
+      _startPolling();
     }
   }
 
-  Future<void> _checkPaymentStatus() async {
-    if (_isChecking) return;
+  void _startPolling() {
+    if (_pollTimer != null) return; // already polling
     setState(() => _isChecking = true);
 
-    try {
-      final bookingService = context.read<BookingService>();
-      final userId = context.read<AuthService>().currentUser?.id ?? '';
-      await bookingService.loadUserBookings(userId, force: true);
+    int attempts = 0;
+    const maxAttempts = 20; // 20 * 3s = 60s
 
-      BookingModel? booking;
-      try {
-        booking =
-            bookingService.bookings.firstWhere((b) => b.id == widget.bookingId);
-      } catch (_) {
-        booking = null;
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      attempts++;
+      final bookingService = context.read<BookingService>();
+      final status = await bookingService.fetchBookingStatus(widget.bookingId);
+
+      if (!mounted) {
+        timer.cancel();
+        _pollTimer = null;
+        return;
       }
 
-      if (!mounted) return;
-
-      if (booking != null && booking.status == BookingStatus.confirmed) {
+      if (status == BookingStatus.confirmed) {
+        timer.cancel();
+        _pollTimer = null;
         setState(() {
           _paymentCompleted = true;
           _walletPending = false;
+          _isChecking = false;
         });
+        // Reload all bookings in background so bookings list is fresh
+        final userId = context.read<AuthService>().currentUser?.id ?? '';
+        bookingService.loadUserBookings(userId, force: true);
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) context.go('/ticket/${widget.bookingId}');
         });
-      } else if (booking != null &&
-          booking.status == BookingStatus.cancelled) {
+      } else if (status == BookingStatus.cancelled) {
+        timer.cancel();
+        _pollTimer = null;
         setState(() {
           _paymentFailed = true;
           _walletPending = false;
+          _isChecking = false;
           _errorMessage = 'Payment was not successful. Please try again.';
         });
-      } else {
-        if (mounted) _showStatusCheckDialog();
+      } else if (attempts >= maxAttempts) {
+        timer.cancel();
+        _pollTimer = null;
+        setState(() {
+          _isChecking = false;
+          _walletPending = false;
+        });
+        if (mounted) _showTimeoutDialog();
       }
-    } catch (e) {
-      debugPrint('Error checking payment status: $e');
-    } finally {
-      if (mounted) setState(() => _isChecking = false);
-    }
+    });
   }
 
-  void _showStatusCheckDialog() {
+  void _showTimeoutDialog() {
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Payment Status'),
-        content: Text(
-          _selectedMethod == _PaymentMethod.wallet
-              ? 'Please approve the payment in your wallet app.\n\nIf you already approved it, tap "Check Again".'
-              : 'We\'re waiting for payment confirmation from Paymob.\n\nIf you completed the payment, tap "Check Again".',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              setState(() => _walletPending = false);
-              context.pop();
-            },
-            child: const Text('Cancel Booking'),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Payment Processing'),
+          content: const Text(
+            'Your payment is still being processed. This can take a few minutes.\n\nYou can check your bookings later — we\'ll update the status automatically.',
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _checkPaymentStatus();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.pop();
+              },
+              child: const Text('Go to Bookings'),
             ),
-            child: const Text('Check Again'),
-          ),
-        ],
-      ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _startPolling();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+              ),
+              child: const Text('Keep Waiting'),
+            ),
+          ],
+        );
+      },
     );
   }
 
