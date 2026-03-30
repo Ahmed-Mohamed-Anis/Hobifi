@@ -13,7 +13,7 @@ const CORS_HEADERS = {
 // Verify HMAC signature from Paymob
 async function verifyHmac(data: any, receivedHmac: string, hmacSecret: string): Promise<boolean> {
   if (!hmacSecret || !receivedHmac) {
-    console.warn("HMAC verification skipped: missing secret or received HMAC");
+    console.error("HMAC verification skipped: missing secret or received HMAC");
     return false;
   }
 
@@ -66,123 +66,52 @@ async function verifyHmac(data: any, receivedHmac: string, hmacSecret: string): 
   }
 }
 
-// Credit the business wallet after a successful payment
-async function creditBusinessWallet(
-  supabase: any,
-  activityId: string,
-  businessEarnings: number,
-  bookingId: string,
-  activityTitle: string
-) {
-  try {
-    // Get the business_id from the activity
-    const { data: activity, error: activityError } = await supabase
-      .from("activities")
-      .select("business_id, title")
-      .eq("id", activityId)
-      .single();
-
-    if (activityError || !activity) {
-      console.error("Could not find activity for wallet credit:", activityError);
-      return;
-    }
-
-    const businessId = activity.business_id;
-    const title = activity.title || activityTitle;
-
-    // Upsert wallet — create if doesn't exist, otherwise update balance
-    const { data: existingWallet } = await supabase
-      .from("business_wallets")
-      .select("id, balance, total_earned")
-      .eq("business_id", businessId)
-      .single();
-
-    if (existingWallet) {
-      // Update existing wallet
-      await supabase
-        .from("business_wallets")
-        .update({
-          balance: existingWallet.balance + businessEarnings,
-          total_earned: existingWallet.total_earned + businessEarnings,
-        })
-        .eq("business_id", businessId);
-    } else {
-      // Create new wallet
-      await supabase
-        .from("business_wallets")
-        .insert({
-          business_id: businessId,
-          balance: businessEarnings,
-          total_earned: businessEarnings,
-          total_withdrawn: 0,
-        });
-    }
-
-    // Record the transaction in the ledger
-    await supabase.from("wallet_transactions").insert({
-      business_id: businessId,
-      type: "earning",
-      amount: businessEarnings,
-      reference_id: bookingId,
-      description: `Earning from booking: ${title}`,
-    });
-
-    console.log(`Credited ${businessEarnings} to business ${businessId} wallet`);
-  } catch (e) {
-    console.error("Failed to credit business wallet:", e);
-  }
-}
-
 serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const hmacSecret = Deno.env.get("PAYMOB_HMAC_SECRET") || "";
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const hmacSecret = Deno.env.get("PAYMOB_HMAC_SECRET") || "";
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse the callback data
-    let callbackData: any;
-    let receivedHmac: string = "";
-
+    // ── GET: Browser redirect only — no DB mutations ──
     if (req.method === "GET") {
-      // Handle redirect callback (GET with query params)
       const url = new URL(req.url);
-      const params = Object.fromEntries(url.searchParams);
-      receivedHmac = params.hmac || "";
-      callbackData = {
-        obj: {
-          id: params.id,
-          pending: params.pending === "true",
-          success: params.success === "true",
-          amount_cents: params.amount_cents,
-          order: {
-            id: params.order,
-            merchant_order_id: params.merchant_order_id
-          },
-          source_data: { type: params.source_data_type },
-        },
-      };
-    } else {
-      // Handle webhook callback (POST with JSON body)
-      callbackData = await req.json();
-      receivedHmac = callbackData.hmac || "";
+      const success = url.searchParams.get("success") === "true";
+      const html = `<!DOCTYPE html><html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;">
+        <div style="text-align:center;">
+          <h2>${success ? "Payment Successful!" : "Payment Failed"}</h2>
+          <p>${success ? "Please return to the Hobifi app to see your ticket." : "Please return to the Hobifi app to try again."}</p>
+        </div>
+      </body></html>`;
+      return new Response(html, {
+        status: 200,
+        headers: { ...CORS_HEADERS, "Content-Type": "text/html" },
+      });
     }
 
-    // Verify HMAC signature
-    if (hmacSecret) {
-      const isValid = await verifyHmac(callbackData, receivedHmac, hmacSecret);
-      if (!isValid) {
-        console.error("HMAC verification failed");
-        return new Response(
-          JSON.stringify({ error: "Invalid HMAC signature" }),
-          { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-        );
-      }
+    // ── POST: Webhook (server-to-server) — requires HMAC ──
+    if (!hmacSecret) {
+      console.error("PAYMOB_HMAC_SECRET not configured");
+      return new Response(
+        JSON.stringify({ error: "Webhook signature verification not configured" }),
+        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+
+    const callbackData = await req.json();
+    const receivedHmac = callbackData.hmac || "";
+
+    const isValid = await verifyHmac(callbackData, receivedHmac, hmacSecret);
+    if (!isValid) {
+      console.error("HMAC verification failed — rejecting webhook");
+      return new Response(
+        JSON.stringify({ error: "Invalid HMAC signature" }),
+        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
     }
 
     const { obj } = callbackData;
@@ -192,23 +121,13 @@ serve(async (req: Request) => {
     const isPending = obj.pending === true;
     const paymentMethod = obj.source_data?.type || "card";
 
-    console.log("Paymob callback received:", {
-      transactionId,
-      orderId,
-      isSuccess,
-      isPending,
-      paymentMethod,
-    });
+    console.log("Webhook received:", { transactionId, orderId, isSuccess, isPending });
 
-    // Determine payment status
     let status = "failed";
-    if (isSuccess) {
-      status = "completed";
-    } else if (isPending) {
-      status = "processing";
-    }
+    if (isSuccess) status = "completed";
+    else if (isPending) status = "processing";
 
-    // Find payment by booking_id (merchant_order_id)
+    // Find payment by booking_id
     const { data: paymentData, error: findError } = await supabase
       .from("payments")
       .select("id, booking_id, activity_id, business_earnings, status")
@@ -223,11 +142,11 @@ serve(async (req: Request) => {
       );
     }
 
-    // Prevent processing the same successful payment twice
+    // Idempotency: skip if already completed
     if (paymentData.status === "completed") {
       console.log("Payment already completed, skipping:", paymentData.id);
       return new Response(
-        JSON.stringify({ success: true, status: "already_completed", booking_id: paymentData.booking_id }),
+        JSON.stringify({ success: true, status: "already_completed" }),
         { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }
@@ -236,15 +155,15 @@ serve(async (req: Request) => {
     const normalizedMethod = paymentMethod === "wallet" ? "wallet" : paymentMethod === "applepay" ? "applePay" : "card";
     const { error: updatePaymentError } = await supabase
       .from("payments")
-      .update({
-        status,
-        transaction_id: transactionId,
-        payment_method: normalizedMethod,
-      })
+      .update({ status, transaction_id: transactionId, payment_method: normalizedMethod })
       .eq("id", paymentData.id);
 
     if (updatePaymentError) {
       console.error("Failed to update payment:", updatePaymentError);
+      return new Response(
+        JSON.stringify({ error: "Failed to update payment record" }),
+        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
     }
 
     // Update booking status
@@ -256,46 +175,64 @@ serve(async (req: Request) => {
 
     if (updateBookingError) {
       console.error("Failed to update booking:", updateBookingError);
-    }
-
-    // Credit business wallet on successful payment
-    if (isSuccess && paymentData.business_earnings > 0) {
-      await creditBusinessWallet(
-        supabase,
-        paymentData.activity_id,
-        paymentData.business_earnings,
-        paymentData.booking_id,
-        "" // title will be fetched from activity
+      return new Response(
+        JSON.stringify({ error: "Failed to update booking record" }),
+        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Payment processed successfully:", {
-      paymentId: paymentData.id,
-      status,
-      bookingStatus,
-      walletCredited: isSuccess,
-    });
+    // Release spot on failure
+    if (!isSuccess && !isPending) {
+      const { error: releaseError } = await supabase.rpc("release_spot", {
+        p_activity_id: paymentData.activity_id,
+      });
+      if (releaseError) {
+        console.error("Failed to release spot:", releaseError);
+        return new Response(
+          JSON.stringify({ error: "Failed to release spot — will retry" }),
+          { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        );
+      }
+      console.log("Released spot for failed payment:", paymentData.booking_id);
+    }
+
+    // Credit business wallet on success
+    if (isSuccess && paymentData.business_earnings > 0) {
+      const { data: activity } = await supabase
+        .from("activities")
+        .select("business_id, title")
+        .eq("id", paymentData.activity_id)
+        .single();
+
+      if (activity) {
+        const { error: creditError } = await supabase.rpc("credit_wallet", {
+          p_business_id: activity.business_id,
+          p_amount: paymentData.business_earnings,
+          p_booking_id: paymentData.booking_id,
+          p_description: `Earning from booking: ${activity.title}`,
+        });
+
+        if (creditError) {
+          console.error("credit_wallet failed:", creditError);
+          return new Response(
+            JSON.stringify({ error: "Failed to credit wallet — will retry" }),
+            { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+          );
+        }
+        console.log(`Credited ${paymentData.business_earnings} to business ${activity.business_id}`);
+      }
+    }
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        status,
-        booking_id: paymentData.booking_id
-      }),
-      {
-        status: 200,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ success: true, status, booking_id: paymentData.booking_id }),
+      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
+
   } catch (error) {
-    console.error("Paymob webhook error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Webhook error:", error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      {
-        status: 500,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
 });
