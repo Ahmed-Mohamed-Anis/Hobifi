@@ -262,6 +262,94 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
   
+  Widget _buildLogoBlock(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppColors.orange,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(Icons.explore_rounded, size: 24, color: Colors.white),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'HOBIFI',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _isSignUp ? 'Begin Your Journey' : 'Discover What Moves You',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRoleToggle(ColorScheme colorScheme) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(9999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildToggleTab(
+              label: 'Explorer',
+              isSelected: _isUser,
+              colorScheme: colorScheme,
+              onTap: () => setState(() => _isUser = true),
+            ),
+            _buildToggleTab(
+              label: 'Host',
+              isSelected: !_isUser,
+              colorScheme: colorScheme,
+              onTap: () => setState(() => _isUser = false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleTab({
+    required String label,
+    required bool isSelected,
+    required ColorScheme colorScheme,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? colorScheme.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(9999),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputField({
     required TextEditingController controller,
     required String label,
