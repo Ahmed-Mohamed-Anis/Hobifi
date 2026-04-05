@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -60,6 +58,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
   }
 
   Future<void> _init() async {
+    final activityService = context.read<ActivityService>();
     try {
       final fromDb = await SupabaseService.selectSingle('activities', filters: {'id': widget.activityId});
       ActivityModel? model;
@@ -67,14 +66,12 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         model = ActivityModel.fromJson(fromDb);
       } else {
         // Fallback to provider cache
-        final svc = context.read<ActivityService>();
-        model = svc.getActivityById(widget.activityId);
+        model = activityService.getActivityById(widget.activityId);
       }
       if (model == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity not found')));
-          context.pop();
-        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity not found')));
+        context.pop();
         return;
       }
       _applyModel(model);
@@ -172,14 +169,16 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         debugPrint('Failed to fetch attendees: $e');
       }
 
-      if (mounted) setState(() {
-        _paidBookings = bookingsList.length;
-        _earned = earnings;
-        _likesCount = likesList.length;
-        _avgRating = avgRating;
-        _ratingsCount = ratingsList.length;
-        _attendees = attendees;
-      });
+      if (mounted) {
+        setState(() {
+          _paidBookings = bookingsList.length;
+          _earned = earnings;
+          _likesCount = likesList.length;
+          _avgRating = avgRating;
+          _ratingsCount = ratingsList.length;
+          _attendees = attendees;
+        });
+      }
     } catch (e) {
       debugPrint('Failed to fetch activity stats: $e');
     }
@@ -195,7 +194,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     super.dispose();
   }
 
-  Future<String> _uploadBytes(Uint8List bytes, String filename, {String mimeType = 'image/jpeg'}) async {
+  Future<String> _uploadBytes(Uint8List bytes, String filename) async {
     final userId = _activity?.businessId ?? 'anonymous';
     final path = 'activities/$userId/${DateTime.now().millisecondsSinceEpoch}_$filename';
     const targetBucket = 'activity-images';
@@ -347,6 +346,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
 
   Future<void> _deleteListing() async {
     if (_activity == null) return;
+    final activityService = context.read<ActivityService>();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -361,7 +361,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     if (confirm != true) return;
 
     try {
-      await context.read<ActivityService>().deleteActivity(_activity!.id);
+      await activityService.deleteActivity(_activity!.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Listing deleted')));
         context.pop();
@@ -462,7 +462,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                           Switch.adaptive(
                             value: _isPublic,
                             onChanged: (v) => setState(() => _isPublic = v),
-                            activeColor: Colors.green,
+                            activeTrackColor: Colors.green,
                           ),
                         ],
                       ),
@@ -582,7 +582,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                     Row(children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
-                          value: _selectedCategory,
+                          initialValue: _selectedCategory,
                           items: const [
                             DropdownMenuItem(value: 'Art', child: Text('Art')),
                             DropdownMenuItem(value: 'Sports', child: Text('Sports')),

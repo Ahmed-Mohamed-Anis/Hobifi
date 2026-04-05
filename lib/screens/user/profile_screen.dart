@@ -44,7 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (file == null) return;
       final Uint8List bytes = await file.readAsBytes();
-      final String? ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
+      final String ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
       final ok = await auth.changeAvatar(bytes, fileExt: ext);
       if (!mounted) return;
       if (!ok) {
@@ -378,7 +378,7 @@ class _DarkModeToggle extends StatelessWidget {
               Switch.adaptive(
                 value: isDarkMode,
                 onChanged: (_) => onToggle(),
-                activeColor: colorScheme.primary,
+                activeTrackColor: colorScheme.primary,
               ),
             ],
           ),

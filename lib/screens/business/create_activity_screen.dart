@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/models/activity_model.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
@@ -53,7 +53,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
 
-  Future<String> _uploadBytes(Uint8List bytes, String filename, {String mimeType = 'image/jpeg'}) async {
+  Future<String> _uploadBytes(Uint8List bytes, String filename) async {
     final auth = context.read<AuthService>();
     final userId = auth.currentUser?.id ?? 'anonymous';
     final path = 'activities/$userId/${DateTime.now().millisecondsSinceEpoch}_$filename';
@@ -250,7 +250,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       await activityService.createActivity(activity);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity created successfully!')));
-        context.pop();
+        context.go(AppRoutes.businessDashboard);
       }
     } catch (e) {
       debugPrint('Create activity error: $e');
@@ -514,7 +514,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                               Switch(
                                 value: _isInstantBooking,
                                 onChanged: (val) => setState(() => _isInstantBooking = val),
-                                activeColor: AppColors.lightPrimary,
+                                activeTrackColor: AppColors.lightPrimary,
                               ),
                             ],
                           ),
@@ -534,7 +534,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                               Switch(
                                 value: _isPublic,
                                 onChanged: (val) => setState(() => _isPublic = val),
-                                activeColor: AppColors.lightPrimary,
+                                activeTrackColor: AppColors.lightPrimary,
                               ),
                             ],
                           ),
