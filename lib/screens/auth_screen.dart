@@ -186,417 +186,78 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final authService = context.watch<AuthService>();
     final size = MediaQuery.of(context).size;
+    final accentColor = _isUser ? AppColors.orange : AppColors.lime;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // Deep gradient background
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0D0B3E),
-                  AppColors.indigo,
-                  Color(0xFF2A1F5E),
-                ],
-                stops: [0.0, 0.5, 1.0],
-              ),
-            ),
-          ),
-          
-          // Subtle radial glow
-          Positioned(
-            top: -size.height * 0.2,
-            right: -size.width * 0.3,
-            child: Container(
-              width: size.width * 0.8,
-              height: size.width * 0.8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.orange.withValues(alpha: 0.15),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          Positioned(
-            bottom: -size.height * 0.1,
-            left: -size.width * 0.2,
-            child: Container(
-              width: size.width * 0.6,
-              height: size.width * 0.6,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.lime.withValues(alpha: 0.1),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Constellation visualization
-          AnimatedBuilder(
-            animation: Listenable.merge([_constellationController, _pulseController]),
-            builder: (context, child) {
-              return CustomPaint(
-                size: size,
-                painter: _ConstellationPainter(
-                  nodes: _nodes,
-                  edges: _edges,
-                  animationValue: _constellationController.value,
-                  pulseValue: _pulseController.value,
-                ),
-              );
-            },
-          ),
-          
-          // Main content
-          SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(height: size.height * 0.06),
-                    
-                    // Hero section
-                    AnimatedBuilder(
-                      animation: _heroAnimation,
-                      builder: (context, child) {
-                        return Transform.translate(
-                          offset: Offset(0, 30 * (1 - _heroAnimation.value)),
-                          child: Opacity(
-                            opacity: _heroAnimation.value.clamp(0.0, 1.0),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Column(
-                        children: [
-                          // Logo
-                          Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [AppColors.orange, Color(0xFFFF6B35)],
-                              ),
-                              borderRadius: BorderRadius.circular(22),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.orange.withValues(alpha: 0.5),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(Icons.explore_rounded, size: 36, color: Colors.white),
-                          ),
-                          const SizedBox(height: 20),
-                          
-                          // Brand name
-                          ShaderMask(
-                            shaderCallback: (bounds) => const LinearGradient(
-                              colors: [Colors.white, Color(0xFFE0E0FF)],
-                            ).createShader(bounds),
-                            child: Text(
-                              'HOBIFI',
-                              style: theme.textTheme.headlineLarge?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 4,
-                                fontSize: 36,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          
-                          // Tagline
-                          Text(
-                            _isSignUp ? 'Begin Your Journey' : 'Discover What Moves You',
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 32),
-                    
-                    // Role selector - Pill toggle
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(9999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() => _isUser = true),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: _isUser ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(9999),
-                                ),
-                                child: Text('Explorer', style: TextStyle(
-                                  color: _isUser ? AppColors.indigo : Colors.white.withValues(alpha: 0.7),
-                                  fontWeight: _isUser ? FontWeight.w700 : FontWeight.w500,
-                                  fontSize: 14,
-                                )),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _isUser = false),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: !_isUser ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(9999),
-                                ),
-                                child: Text('Host', style: TextStyle(
-                                  color: !_isUser ? AppColors.indigo : Colors.white.withValues(alpha: 0.7),
-                                  fontWeight: !_isUser ? FontWeight.w700 : FontWeight.w500,
-                                  fontSize: 14,
-                                )),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 24),
-                    
-                    // Form card with glassmorphism
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.95),
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.25),
-                            offset: const Offset(0, 20),
-                            blurRadius: 40,
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Form header
-                          Row(
-                            children: [
-                              Container(
-                                width: 4,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: _isUser 
-                                      ? [AppColors.orange, AppColors.orange.withValues(alpha: 0.5)]
-                                      : [AppColors.lime, AppColors.lime.withValues(alpha: 0.5)],
-                                  ),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                _isSignUp ? 'Create Account' : 'Welcome Back',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  color: AppColors.indigo,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: size.height * 0.12),
 
-                          // Name field (sign up only)
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeInOut,
-                            child: _isSignUp ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildInputField(
-                                  controller: _nameController,
-                                  label: 'Full Name',
-                                  hint: 'How should we call you?',
-                                  icon: Icons.person_outline_rounded,
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                            ) : const SizedBox.shrink(),
-                          ),
+                // Logo block
+                _buildLogoBlock(theme, colorScheme),
 
-                          // Email field
-                          _buildInputField(
-                            controller: _emailController,
-                            label: 'Email',
-                            hint: 'your@email.com',
-                            icon: Icons.mail_outline_rounded,
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 12),
-                          
-                          // Password field
-                          _buildInputField(
-                            controller: _passwordController,
-                            label: 'Password',
-                            hint: '••••••••',
-                            icon: Icons.lock_outline_rounded,
-                            obscure: true,
-                          ),
-                          
-                          if (!_isSignUp) ...[
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: _showForgotPasswordDialog,
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                ),
-                                child: Text(
-                                  'Forgot Password?',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: AppColors.orange,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                          
-                          const SizedBox(height: 16),
+                const SizedBox(height: 24),
 
-                          // Primary action button
-                          if (authService.isLoading)
-                            Center(
-                              child: Container(
-                                height: 52,
-                                alignment: Alignment.center,
-                                child: CircularProgressIndicator(
-                                  color: _isUser ? AppColors.orange : AppColors.lime,
-                                  strokeWidth: 3,
-                                ),
-                              ),
-                            )
-                          else
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: FilledButton(
-                                onPressed: _handleAuth,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: AppColors.indigo,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                ),
-                                child: Text(_isSignUp ? 'Create Account' : 'Sign In', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                              ),
-                            ),
-                        ],
+                // Role toggle
+                _buildRoleToggle(colorScheme),
+
+                const SizedBox(height: 24),
+
+                // Form card
+                _buildFormCard(theme, colorScheme, authService, accentColor),
+
+                const SizedBox(height: 20),
+
+                // Social divider
+                _buildDivider(colorScheme),
+
+                const SizedBox(height: 12),
+
+                // Social buttons
+                _buildSocialButtons(colorScheme),
+
+                const SizedBox(height: 24),
+
+                // Toggle sign up/in
+                Center(
+                  child: TextButton(
+                    onPressed: () => setState(() => _isSignUp = !_isSignUp),
+                    child: Text(
+                      _isSignUp
+                          ? 'Already have an account? Sign In'
+                          : "Don't have an account? Sign Up",
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
-                    
-                    const SizedBox(height: 24),
-                    
-                    // Social login divider
-                    Row(
-                      children: [
-                        Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.15))),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            'or continue with',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ),
-                        Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.15))),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 20),
-                    
-                    // Social buttons
-                    Row(
-                      children: [
-                        Expanded(child: _buildSocialButton(
-                          icon: Icons.g_mobiledata, 
-                          label: 'Google',
-                          onTap: _handleGoogleSignIn,
-                        )),
-                        const SizedBox(width: 12),
-                        Expanded(child: _buildSocialButton(
-                          icon: Icons.apple_rounded, 
-                          label: 'Apple',
-                          onTap: _handleAppleSignIn,
-                        )),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 28),
-                    
-                    // Toggle sign up/in
-                    Center(
-                      child: TextButton(
-                        onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                        child: Text(
-                          _isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up",
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 20),
-                    
-                    // Terms
-                    Center(
-                      child: Text(
-                        'By continuing, you agree to our Terms & Privacy Policy',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.35),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 24),
-                  ],
+                  ),
                 ),
-              ),
+
+                // Terms
+                Center(
+                  child: Text(
+                    'By continuing, you agree to our Terms & Privacy Policy',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.35),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
