@@ -260,25 +260,12 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildLogoBlock(ThemeData theme, ColorScheme colorScheme) {
     return Column(
       children: [
-        Container(
-          width: 48,
+        Image.asset(
+          'assets/images/hobifi_logo.png',
           height: 48,
-          decoration: BoxDecoration(
-            color: AppColors.orange,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(Icons.explore_rounded, size: 24, color: Colors.white),
+          fit: BoxFit.contain,
         ),
-        const SizedBox(height: 16),
-        Text(
-          'HOBIFI',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 3,
-          ),
-        ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         Text(
           _isSignUp ? 'Begin Your Journey' : 'Discover What Moves You',
           style: theme.textTheme.bodyMedium?.copyWith(
