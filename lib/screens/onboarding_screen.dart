@@ -29,6 +29,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _InterestOption('Outdoor', Icons.terrain_rounded, Color(0xFF795548)),
   ];
 
+  bool get _canContinue =>
+      _currentPage == 0 ? _selectedInterests.length >= 3 : true;
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -100,34 +103,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top bar with skip + progress
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Progress dots
-                  Row(
-                    children: List.generate(2, (i) => Container(
-                      width: i == _currentPage ? 24 : 8,
-                      height: 8,
-                      margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        color: i == _currentPage
-                            ? colorScheme.primary
-                            : colorScheme.onSurface.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    )),
-                  ),
-                  TextButton(
-                    onPressed: _saving ? null : _skip,
-                    child: Text('Skip', style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.5))),
-                  ),
-                ],
-              ),
-            ),
-
             // Pages
             Expanded(
               child: PageView(
@@ -151,26 +126,67 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
 
-            // Bottom button
+            // Progress dots
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(2, (i) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: _currentPage == i ? 24 : 8,
+                  height: 8,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: _currentPage == i
+                        ? colorScheme.primary
+                        : colorScheme.primary.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                )),
+              ),
+            ),
+
+            // Skip link
+            TextButton(
+              onPressed: _saving ? null : _skip,
+              child: Text(
+                'Skip for now',
+                style: TextStyle(
+                  color: colorScheme.onSurface.withValues(alpha: 0.45),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Continue / Get Started button
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: SizedBox(
                 width: double.infinity,
-                height: 56,
+                height: 52,
                 child: FilledButton(
-                  onPressed: _saving
-                      ? null
-                      : (_currentPage == 0 && _selectedInterests.length < 3)
-                          ? null
-                          : _nextPage,
+                  onPressed: _saving ? null : (_canContinue ? _nextPage : null),
                   style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: colorScheme.onPrimary,
+                    disabledBackgroundColor:
+                        colorScheme.primary.withValues(alpha: 0.3),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                   child: _saving
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
                       : Text(
-                          _currentPage == 0 ? 'Continue' : 'Get Started',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          _currentPage == 1 ? 'Get Started' : 'Continue',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                 ),
               ),
@@ -227,45 +243,82 @@ class _InterestsPage extends StatelessWidget {
                 crossAxisCount: 2,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
-                childAspectRatio: 1.4,
+                childAspectRatio: 1.6,
               ),
               itemCount: interests.length,
               itemBuilder: (context, i) {
                 final interest = interests[i];
                 final isSelected = selected.contains(interest.label);
-                return GestureDetector(
-                  onTap: () => onToggle(interest.label),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? interest.color.withValues(alpha: 0.15)
-                          : colorScheme.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
+                return AnimatedScale(
+                  scale: isSelected ? 0.95 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: GestureDetector(
+                    onTap: () => onToggle(interest.label),
+                    child: Container(
+                      height: 80,
+                      decoration: BoxDecoration(
                         color: isSelected
-                            ? interest.color
-                            : colorScheme.outline.withValues(alpha: 0.15),
-                        width: isSelected ? 2 : 1,
+                            ? interest.color.withValues(alpha: 0.15)
+                            : colorScheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected
+                              ? interest.color
+                              : colorScheme.outline.withValues(alpha: 0.2),
+                          width: isSelected ? 2 : 1,
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          interest.icon,
-                          size: 36,
-                          color: isSelected ? interest.color : colorScheme.onSurface.withValues(alpha: 0.5),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          interest.label,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            color: isSelected ? interest.color : colorScheme.onSurface.withValues(alpha: 0.7),
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  interest.icon,
+                                  size: 28,
+                                  color: isSelected
+                                      ? interest.color
+                                      : colorScheme.onSurface
+                                          .withValues(alpha: 0.5),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  interest.label,
+                                  style:
+                                      theme.textTheme.labelMedium?.copyWith(
+                                    color: isSelected
+                                        ? interest.color
+                                        : colorScheme.onSurface
+                                            .withValues(alpha: 0.7),
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          if (isSelected)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: interest.color,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -330,18 +383,22 @@ class _CityPage extends StatelessWidget {
             textCapitalization: TextCapitalization.words,
             decoration: InputDecoration(
               hintText: 'e.g. Cairo, Alexandria, London...',
-              prefixIcon: Icon(Icons.location_on_rounded, color: colorScheme.primary),
+              prefixIcon:
+                  Icon(Icons.location_on_rounded, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                borderSide: BorderSide(
+                    color: colorScheme.outline.withValues(alpha: 0.2)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                borderSide: BorderSide(
+                    color: colorScheme.outline.withValues(alpha: 0.2)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                borderSide:
+                    BorderSide(color: colorScheme.primary, width: 2),
               ),
               filled: true,
               fillColor: colorScheme.surface,
