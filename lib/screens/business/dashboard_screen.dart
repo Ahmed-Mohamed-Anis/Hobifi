@@ -4,10 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
-import 'package:hobby_haven/theme.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
+import 'package:hobby_haven/widgets/hobifi_stat_card.dart';
+import 'package:hobby_haven/widgets/hobifi_chip.dart';
+import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
+import 'package:hobby_haven/widgets/hobifi_section_header.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,7 +20,27 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  /// Fetch last 7 days revenue for the chart
+  // Cached futures — created once, survive rebuilds
+  Future<_BusinessStats>? _statsFuture;
+  Future<List<_DailyRevenue>>? _revenueFuture;
+  Future<Map<String, _PerActivityStats>>? _perActivityFuture;
+  Future<List<_EarningsTransaction>>? _earningsFuture;
+  int _selectedDays = 7; // 7, 30, or 90
+
+  void _initDashboard(String businessId) {
+    _statsFuture = _fetchStats(businessId);
+    _revenueFuture = _fetchRevenueChart(businessId);
+    _perActivityFuture = _fetchPerActivityStats(businessId);
+    _earningsFuture = _fetchEarningsHistory(businessId);
+  }
+
+  void _refreshDashboard(String businessId) {
+    setState(() {
+      _initDashboard(businessId);
+    });
+  }
+
+  /// Fetch last N days revenue for the chart
   Future<List<_DailyRevenue>> _fetchRevenueChart(String businessId) async {
     try {
       final acts = await SupabaseService.select('activities',
@@ -27,7 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (activityIds.isEmpty) return _generateEmptyDays();
 
       final now = DateTime.now();
-      final sevenDaysAgo = now.subtract(const Duration(days: 6));
+      final sevenDaysAgo = now.subtract(Duration(days: _selectedDays - 1));
 
       final paymentsRows = await SupabaseService.from('payments')
           .select('business_earnings,created_at,status')
@@ -37,7 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 // Group by day
       final Map<String, double> dailyEarnings = {};
-      for (int i = 0; i < 7; i++) {
+      for (int i = 0; i < _selectedDays; i++) {
         final day =
             DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day)
                 .add(Duration(days: i));
@@ -70,8 +93,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   List<_DailyRevenue> _generateEmptyDays() {
     final now = DateTime.now();
-    return List.generate(7, (i) {
-      final day = now.subtract(Duration(days: 6 - i));
+    return List.generate(_selectedDays, (i) {
+      final day = now.subtract(Duration(days: _selectedDays - 1 - i));
       return _DailyRevenue(dayIndex: i, amount: 0.0, date: day);
     });
   }
@@ -119,9 +142,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           select: 'id', filters: {'business_id': businessId});
       final activityIds =
           acts.map((e) => e['id'] as String).whereType<String>().toList();
-      if (activityIds.isEmpty)
+      if (activityIds.isEmpty) {
         return const _BusinessStats(
             earnings: 0, bookings: 0, likes: 0, avgRating: 0.0);
+      }
 
 // Fetch paid bookings, payments, likes, and ratings in parallel
       final bookingsFuture = SupabaseService.from('bookings')
@@ -293,6 +317,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -308,79 +339,95 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final activityService = context.watch<ActivityService>();
     context.watch<BookingService>(); // Keep reactive but unused directly
     final authService = context.watch<AuthService>();
-    final userId = authService.currentUser?.id;
+    final user = authService.currentUser;
+    final userId = user?.id;
 
-// Data for the Activities list (can rely on providers; not used for top stats)
+    // Initialize cached futures once when userId is available
+    if (userId != null && _statsFuture == null) {
+      _initDashboard(userId);
+    }
+
     final businessActivities = userId == null
         ? const []
         : activityService.getActivitiesByBusinessId(userId);
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            if (userId != null) _refreshDashboard(userId);
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ──────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Dashboard',
-                              style: theme.textTheme.displayLarge?.copyWith(
-                                  color: AppColors.lightPrimaryText,
-                                  fontWeight: FontWeight.w900)),
-                          Text(
-                              'Welcome back, ${authService.currentUser?.name ?? 'Business'}',
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _greeting(),
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: AppColors.lightSecondaryText)),
-                        ],
+                                color: colorScheme.onSurface
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              user?.name ?? 'Dashboard',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                  Row(
-                    children: [
+                      // Wallet button
                       IconButton(
-                        onPressed: () => context.push(AppRoutes.businessWallet),
+                        onPressed: () =>
+                            context.push(AppRoutes.businessWallet),
                         style: IconButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          backgroundColor:
+                              colorScheme.primary.withValues(alpha: 0.1),
                         ),
                         icon: Icon(Icons.account_balance_wallet_rounded,
-                            color: theme.colorScheme.primary),
+                            color: colorScheme.primary),
                       ),
                       const SizedBox(width: 8),
+                      // Avatar circle
                       GestureDetector(
-                        onTap: () => context.push(AppRoutes.businessProfile),
+                        onTap: () =>
+                            context.push(AppRoutes.businessProfile),
                         child: Container(
-                          width: 48,
-                          height: 48,
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(AppRadius.full),
-                            border:
-                                Border.all(color: AppColors.lightPrimary, width: 2),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: colorScheme.primary, width: 2),
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
+                          child: ClipOval(
                             child: CircleAvatar(
-                              backgroundColor: AppColors.lightSurface,
-                              backgroundImage: (authService.currentUser?.avatarUrl !=
-                                          null &&
-                                      (authService.currentUser!.avatarUrl!
-                                              .startsWith('http') ||
-                                          authService.currentUser!.avatarUrl!
+                              backgroundColor: colorScheme.surfaceContainerHighest,
+                              backgroundImage: (user?.avatarUrl != null &&
+                                      (user!.avatarUrl!.startsWith('http') ||
+                                          user.avatarUrl!
                                               .startsWith('https')))
-                                  ? NetworkImage(authService.currentUser!.avatarUrl!)
+                                  ? NetworkImage(user.avatarUrl!)
                                   : null,
-                              child: (authService.currentUser?.avatarUrl == null)
-                                  ? const Icon(Icons.store_rounded,
-                                      color: AppColors.lightPrimary)
+                              child: user?.avatarUrl == null
+                                  ? Icon(Icons.store_rounded,
+                                      color: colorScheme.primary)
                                   : null,
                             ),
                           ),
@@ -388,421 +435,497 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (userId == null)
-                Row(
-                  children: const [
-                    Expanded(child: _StatCardSkeleton()),
-                    SizedBox(width: AppSpacing.md),
-                    Expanded(child: _StatCardSkeleton()),
-                    SizedBox(width: AppSpacing.md),
-                    Expanded(child: _StatCardSkeleton()),
-                  ],
-                )
-              else
-                FutureBuilder<_BusinessStats>(
-                  future: _fetchStats(userId),
-                  builder: (context, snapshot) {
-                    final loading =
-                        snapshot.connectionState != ConnectionState.done;
-                    final stats = snapshot.data ??
-                        const _BusinessStats(
-                            earnings: 0, bookings: 0, likes: 0, avgRating: 0.0);
-                    if (loading &&
-                        snapshot.hasError == false &&
-                        snapshot.data == null) {
-                      return Row(
-                        children: const [
-                          Expanded(child: _StatCardSkeleton()),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(child: _StatCardSkeleton()),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(child: _StatCardSkeleton()),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: StatCard(
-                                icon: Icons.payments_rounded,
-                                iconBg: AppColors.lightPrimary
-                                    .withValues(alpha: 0.13),
-                                iconColor: const Color(0xFF047E0D),
-                                value: '\$${stats.earnings.toStringAsFixed(0)}',
-                                label: 'Earnings',
-                                trend: '',
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: StatCard(
-                                icon: Icons.confirmation_number_rounded,
-                                iconBg: AppColors.lightSecondary
-                                    .withValues(alpha: 0.13),
-                                iconColor: AppColors.lightSecondary,
-                                value: stats.bookings.toString(),
-                                label: 'Bookings',
-                                trend: '',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: StatCard(
-                                icon: Icons.favorite_rounded,
-                                iconBg: const Color(0xFFF0DCDC),
-                                iconColor: const Color(0xFFFF0000),
-                                value: stats.likes.toString(),
-                                label: 'Likes',
-                                trend: '',
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: StatCard(
-                                icon: Icons.star_rounded,
-                                iconBg: AppColors.lightAccent
-                                    .withValues(alpha: 0.13),
-                                iconColor: AppColors.lightAccent,
-                                value: stats.avgRating.toStringAsFixed(1),
-                                label: 'Avg Rating',
-                                trend: '',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
                 ),
-              const SizedBox(height: AppSpacing.lg),
-              if (userId != null)
-                FutureBuilder<List<_DailyRevenue>>(
-                  future: _fetchRevenueChart(userId),
-                  builder: (context, snapshot) {
-                    final revenueData = snapshot.data ?? _generateEmptyDays();
-                    final maxY = revenueData
-                        .map((e) => e.amount)
-                        .fold<double>(0.0, (a, b) => a > b ? a : b);
-                    final spots = revenueData
-                        .map((e) => FlSpot(e.dayIndex.toDouble(), e.amount))
-                        .toList();
-                    final weekdays = [
-                      'Mon',
-                      'Tue',
-                      'Wed',
-                      'Thu',
-                      'Fri',
-                      'Sat',
-                      'Sun'
-                    ];
 
-                    return Container(
-                      padding: AppSpacing.paddingLg,
-                      decoration: BoxDecoration(
-                        color: AppColors.lightSurface,
-                        borderRadius: BorderRadius.circular(32),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            offset: const Offset(0, 10),
-                            blurRadius: 20,
+                // ── Stat Cards (horizontal scroll) ──────────────────
+                if (userId == null)
+                  _buildStatCardsShimmer()
+                else
+                  FutureBuilder<_BusinessStats>(
+                    future: _statsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done &&
+                          snapshot.data == null) {
+                        return _buildStatCardsShimmer();
+                      }
+                      final stats = snapshot.data ??
+                          const _BusinessStats(
+                              earnings: 0,
+                              bookings: 0,
+                              likes: 0,
+                              avgRating: 0.0);
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                        child: Row(
+                          children: [
+                            HobifiStatCard(
+                              icon: Icons.payments_rounded,
+                              label: 'Total Revenue',
+                              value:
+                                  'EGP ${stats.earnings.toStringAsFixed(0)}',
+                            ),
+                            const SizedBox(width: 12),
+                            HobifiStatCard(
+                              icon: Icons.confirmation_number_rounded,
+                              label: 'Total Bookings',
+                              value: stats.bookings.toString(),
+                            ),
+                            const SizedBox(width: 12),
+                            HobifiStatCard(
+                              icon: Icons.event_available_rounded,
+                              label: 'Active Activities',
+                              value: businessActivities.length.toString(),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+
+                // ── Revenue Chart ────────────────────────────────────
+                if (userId != null) ...[
+                  // Period selector
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    child: Row(
+                      children: [
+                        for (final days in [7, 30, 90])
+                          HobifiChip(
+                            label: '${days}d',
+                            isSelected: _selectedDays == days,
+                            onTap: () {
+                              setState(() => _selectedDays = days);
+                              _refreshDashboard(userId);
+                            },
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Revenue Trend',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                      color: AppColors.lightPrimaryText,
-                                      fontWeight: FontWeight.bold)),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: AppColors.lightBackground,
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.full),
-                                ),
-                                child: Text('Last 7 Days',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                        color: AppColors.lightPrimary)),
+                      ],
+                    ),
+                  ),
+                  FutureBuilder<List<_DailyRevenue>>(
+                    future: _revenueFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          snapshot.data == null) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                          child: HobifiShimmer(
+                              width: double.infinity,
+                              height: 220,
+                              borderRadius: 20),
+                        );
+                      }
+                      final revenueData =
+                          snapshot.data ?? _generateEmptyDays();
+                      final maxY = revenueData
+                          .map((e) => e.amount)
+                          .fold<double>(0.0, (a, b) => a > b ? a : b);
+                      final spots = revenueData
+                          .map((e) =>
+                              FlSpot(e.dayIndex.toDouble(), e.amount))
+                          .toList();
+                      const weekdays = [
+                        'Mon',
+                        'Tue',
+                        'Wed',
+                        'Thu',
+                        'Fri',
+                        'Sat',
+                        'Sun'
+                      ];
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                offset: const Offset(0, 8),
+                                blurRadius: 20,
                               ),
                             ],
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          SizedBox(
-                            height: 180,
-                            child: LineChart(
-                              LineChartData(
-                                gridData: const FlGridData(show: false),
-                                titlesData: FlTitlesData(
-                                  show: true,
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      getTitlesWidget: (value, meta) {
-                                        if (value.toInt() < 0 ||
-                                            value.toInt() >= revenueData.length)
-                                          return const SizedBox.shrink();
-                                        final day =
-                                            revenueData[value.toInt()].date;
-                                        return Padding(
-                                          padding:
-                                              const EdgeInsets.only(top: 8),
-                                          child: Text(weekdays[day.weekday - 1],
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                      color:
-                                                          AppColors.lightHint)),
-                                        );
-                                      },
-                                      reservedSize: 28,
-                                    ),
-                                  ),
-                                  leftTitles: const AxisTitles(
-                                      sideTitles:
-                                          SideTitles(showTitles: false)),
-                                  topTitles: const AxisTitles(
-                                      sideTitles:
-                                          SideTitles(showTitles: false)),
-                                  rightTitles: const AxisTitles(
-                                      sideTitles:
-                                          SideTitles(showTitles: false)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Revenue Trend',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                borderData: FlBorderData(show: false),
-                                minY: 0,
-                                maxY: maxY > 0 ? maxY * 1.2 : 100,
-                                lineBarsData: [
-                                  LineChartBarData(
-                                    spots: spots,
-                                    isCurved: true,
-                                    color: AppColors.lightPrimary,
-                                    barWidth: 4,
-                                    dotData: FlDotData(
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                height: 180,
+                                child: LineChart(
+                                  LineChartData(
+                                    gridData: FlGridData(
                                       show: true,
-                                      getDotPainter:
-                                          (spot, percent, bar, index) =>
-                                              FlDotCirclePainter(
-                                        radius: 4,
-                                        color: AppColors.lightPrimary,
-                                        strokeWidth: 2,
-                                        strokeColor: Colors.white,
+                                      drawVerticalLine: false,
+                                      horizontalInterval:
+                                          maxY > 0 ? maxY / 4 : 25,
+                                      getDrawingHorizontalLine: (value) =>
+                                          FlLine(
+                                        color: colorScheme.outline
+                                            .withValues(alpha: 0.1),
+                                        strokeWidth: 1,
                                       ),
                                     ),
-                                    belowBarData: BarAreaData(
+                                    titlesData: FlTitlesData(
                                       show: true,
-                                      color: AppColors.lightPrimary
-                                          .withValues(alpha: 0.13),
+                                      bottomTitles: AxisTitles(
+                                        sideTitles: SideTitles(
+                                          showTitles: true,
+                                          getTitlesWidget: (value, meta) {
+                                            if (value.toInt() < 0 ||
+                                                value.toInt() >=
+                                                    revenueData.length) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            // For >7 days only show every nth label
+                                            if (_selectedDays > 7 &&
+                                                value.toInt() %
+                                                        (_selectedDays ~/
+                                                            7) !=
+                                                    0) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final day = revenueData[
+                                                    value.toInt()]
+                                                .date;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                  top: 8),
+                                              child: Text(
+                                                weekdays[day.weekday - 1],
+                                                style: theme
+                                                    .textTheme.labelSmall
+                                                    ?.copyWith(
+                                                  color: colorScheme.onSurface
+                                                      .withValues(alpha: 0.4),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          reservedSize: 28,
+                                        ),
+                                      ),
+                                      leftTitles: const AxisTitles(
+                                          sideTitles:
+                                              SideTitles(showTitles: false)),
+                                      topTitles: const AxisTitles(
+                                          sideTitles:
+                                              SideTitles(showTitles: false)),
+                                      rightTitles: const AxisTitles(
+                                          sideTitles:
+                                              SideTitles(showTitles: false)),
                                     ),
+                                    borderData: FlBorderData(show: false),
+                                    minY: 0,
+                                    maxY: maxY > 0 ? maxY * 1.2 : 100,
+                                    lineBarsData: [
+                                      LineChartBarData(
+                                        spots: spots,
+                                        isCurved: true,
+                                        color: colorScheme.primary,
+                                        barWidth: 3,
+                                        dotData: FlDotData(
+                                          show: true,
+                                          getDotPainter: (spot, percent,
+                                                  bar, index) =>
+                                              FlDotCirclePainter(
+                                            radius: 3,
+                                            color: colorScheme.primary,
+                                            strokeWidth: 2,
+                                            strokeColor: colorScheme.surface,
+                                          ),
+                                        ),
+                                        belowBarData: BarAreaData(
+                                          show: true,
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              colorScheme.primary
+                                                  .withValues(alpha: 0.3),
+                                              colorScheme.primary
+                                                  .withValues(alpha: 0.0),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+
+                // ── Per-Activity Breakdown ───────────────────────────
+                if (userId != null) ...[
+                  HobifiSectionHeader(
+                    title: 'Your Activities',
+                    onSeeAll: businessActivities.isEmpty
+                        ? null
+                        : () => context
+                            .push(AppRoutes.businessCreateActivity),
+                  ),
+                  if (businessActivities.isEmpty)
+                    _buildEmptyActivitiesCTA(context)
+                  else
+                    FutureBuilder<Map<String, _PerActivityStats>>(
+                      future: _perActivityFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            snapshot.data == null) {
+                          return Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 20),
+                            child: Column(
+                              children: List.generate(
+                                2,
+                                (_) => Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 12),
+                                  child: HobifiShimmer(
+                                      width: double.infinity,
+                                      height: 100,
+                                      borderRadius: 16),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        final agg = snapshot.data ??
+                            const <String, _PerActivityStats>{};
+                        final activitiesToShow =
+                            businessActivities.take(3).toList();
+                        return Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            children: activitiesToShow.map((activity) {
+                              final stats = agg[activity.id];
+                              final bookingsCount = stats?.bookings ?? 0;
+                              final revenueVal = stats?.revenue ?? 0.0;
+                              // Estimate fill rate from bookings vs total capacity
+                              final totalCapacity =
+                                  bookingsCount + activity.spotsLeft;
+                              final fillRate = totalCapacity > 0
+                                  ? (bookingsCount / totalCapacity)
+                                      .clamp(0.0, 1.0)
+                                  : 0.0;
+                              return _ActivityBreakdownCard(
+                                title: activity.title,
+                                bookings: bookingsCount,
+                                revenue: revenueVal,
+                                fillRate: fillRate,
+                                onTap: () {
+                                  final loc = context.namedLocation(
+                                    'business-activity',
+                                    pathParameters: {'id': activity.id},
+                                  );
+                                  context.push(loc);
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+
+                // ── Recent Earnings ──────────────────────────────────
+                if (userId != null) ...[
+                  HobifiSectionHeader(
+                    title: 'Recent Earnings',
+                    subtitle: '90% goes to you',
+                    onSeeAll: () =>
+                        context.push(AppRoutes.businessWallet),
+                  ),
+                  FutureBuilder<List<_EarningsTransaction>>(
+                    future: _earningsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !snapshot.hasData) {
+                        return Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            children: List.generate(
+                              3,
+                              (_) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: HobifiShimmer.listTile(),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              const SizedBox(height: AppSpacing.xl),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Your Activities',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Color(0xFFC6A2A2),
-                          fontWeight: FontWeight.bold)),
-                  InkWell(
-                    onTap: () => context.push('/business-create-activity'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.lightPrimary,
-                        borderRadius: BorderRadius.circular(AppRadius.full),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                AppColors.lightPrimary.withValues(alpha: 0.27),
-                            offset: const Offset(0, 4),
-                            blurRadius: 12,
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.add_rounded,
-                              color: Colors.white, size: 18),
-                          const SizedBox(width: 4),
-                          Text('Create New',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (userId != null)
-                FutureBuilder<Map<String, _PerActivityStats>>(
-                  future: _fetchPerActivityStats(userId),
-                  builder: (context, snapshot) {
-                    final agg =
-                        snapshot.data ?? const <String, _PerActivityStats>{};
-                    final activitiesToShow =
-                        businessActivities.take(3).toList();
-                    return Column(
-                      children: activitiesToShow.map((activity) {
-                        final stats = agg[activity.id];
-                        final bookingsCount = stats?.bookings ?? 0;
-                        final revenueVal = stats?.revenue ?? 0.0;
-                        final likesCount = stats?.likes ?? 0;
-                        final avgRating = stats?.avgRating ?? 0.0;
-                        final image = (activity.imageUrls.isNotEmpty
-                            ? activity.imageUrls.first
-                            : activity.imageUrl);
-                        return ActivityItem(
-                          title: activity.title,
-                          bookings: bookingsCount,
-                          likes: likesCount,
-                          avgRating: avgRating,
-                          revenue: '\$${revenueVal.toStringAsFixed(0)}',
-                          imageUrl: image,
-                          onTap: () {
-                            debugPrint(
-                                'Dashboard: tapped activity ${activity.id}');
-                            final loc = context.namedLocation(
-                              'business-activity',
-                              pathParameters: {'id': activity.id},
-                            );
-                            debugPrint('Dashboard: navigating to ' + loc);
-                            context.push(loc);
-                          },
                         );
-                      }).toList(),
-                    );
-                  },
-                )
-              else
-                const SizedBox.shrink(),
-              const SizedBox(height: AppSpacing.xl),
-// Earnings History Section
-              if (userId != null) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Recent Earnings',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                            color: AppColors.lightPrimaryText,
-                            fontWeight: FontWeight.bold)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF047E0D).withValues(alpha: 0.13),
-                        borderRadius: BorderRadius.circular(AppRadius.full),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.trending_up_rounded,
-                              size: 14, color: Color(0xFF047E0D)),
-                          const SizedBox(width: 4),
-                          Text('90% to you',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                  color: const Color(0xFF047E0D),
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                FutureBuilder<List<_EarningsTransaction>>(
-                  future: _fetchEarningsHistory(userId),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting &&
-                        !snapshot.hasData) {
-                      return const Center(
-                          child: Padding(
-                              padding: EdgeInsets.all(24),
-                              child: CircularProgressIndicator()));
-                    }
-                    final transactions = snapshot.data ?? [];
-                    if (transactions.isEmpty) {
-                      return Container(
-                        padding: AppSpacing.paddingLg,
-                        decoration: BoxDecoration(
-                          color: AppColors.lightSurface,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: AppColors.lightDivider),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(Icons.account_balance_wallet_outlined,
-                                size: 48, color: AppColors.lightHint),
-                            const SizedBox(height: AppSpacing.md),
-                            Text('No earnings yet',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                    color: AppColors.lightSecondaryText)),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                                'Earnings will appear here after customers make payments',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: AppColors.lightHint),
-                                textAlign: TextAlign.center),
-                          ],
+                      }
+                      final transactions = snapshot.data ?? [];
+                      if (transactions.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.15)),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  size: 48,
+                                  color: colorScheme.onSurface
+                                      .withValues(alpha: 0.3),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No earnings yet',
+                                  style: theme.textTheme.titleMedium
+                                      ?.copyWith(
+                                    color: colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Earnings appear here after payments',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurface
+                                        .withValues(alpha: 0.4),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 20),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                offset: const Offset(0, 4),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children:
+                                transactions.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final tx = entry.value;
+                              final isLast =
+                                  index == transactions.length - 1;
+                              return _EarningsRow(
+                                transaction: tx,
+                                showDivider: !isLast,
+                              );
+                            }).toList(),
+                          ),
                         ),
                       );
-                    }
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.lightSurface,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            offset: const Offset(0, 8),
-                            blurRadius: 16,
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: transactions.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final tx = entry.value;
-                          final isLast = index == transactions.length - 1;
-                          return _EarningsRow(
-                              transaction: tx, showDivider: !isLast);
-                        }).toList(),
-                      ),
-                    );
-                  },
-                ),
+                    },
+                  ),
+                ],
+
+                const SizedBox(height: 32),
               ],
-              const SizedBox(height: AppSpacing.xl),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildStatCardsShimmer() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Row(
+        children: [
+          HobifiShimmer(width: 180, height: 80, borderRadius: 16),
+          const SizedBox(width: 12),
+          HobifiShimmer(width: 180, height: 80, borderRadius: 16),
+          const SizedBox(width: 12),
+          HobifiShimmer(width: 180, height: 80, borderRadius: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyActivitiesCTA(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: colorScheme.primary.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.rocket_launch_rounded,
+                size: 48, color: colorScheme.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Welcome to HOBIFI!',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Create your first activity to start getting bookings from explorers.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () =>
+                  context.go(AppRoutes.businessCreateActivity),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Create Activity'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+// ── Data Models ────────────────────────────────────────────────────────────────
 
 class _BusinessStats {
   final double earnings;
@@ -850,6 +973,8 @@ class _EarningsTransaction {
       required this.status});
 }
 
+// ── Earnings Row ───────────────────────────────────────────────────────────────
+
 class _EarningsRow extends StatelessWidget {
   final _EarningsTransaction transaction;
   final bool showDivider;
@@ -858,14 +983,33 @@ class _EarningsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isCompleted = transaction.status == 'completed';
-    final statusColor =
-        isCompleted ? const Color(0xFF047E0D) : AppColors.lightAccent;
-    final statusBg = isCompleted
-        ? const Color(0xFF047E0D).withValues(alpha: 0.13)
-        : AppColors.lightAccent.withValues(alpha: 0.13);
+    final colorScheme = theme.colorScheme;
 
-// Format date
+    Color statusColor;
+    Color statusBg;
+    String statusLabel;
+    IconData statusIcon;
+
+    switch (transaction.status) {
+      case 'completed':
+        statusColor = const Color(0xFF9BC53D); // lime
+        statusBg = const Color(0xFF9BC53D).withValues(alpha: 0.13);
+        statusLabel = 'Completed';
+        statusIcon = Icons.check_circle_rounded;
+        break;
+      case 'refunded':
+        statusColor = const Color(0xFFE53935); // red
+        statusBg = const Color(0xFFE53935).withValues(alpha: 0.13);
+        statusLabel = 'Refunded';
+        statusIcon = Icons.replay_rounded;
+        break;
+      default:
+        statusColor = const Color(0xFFE88B3C); // orange
+        statusBg = const Color(0xFFE88B3C).withValues(alpha: 0.13);
+        statusLabel = 'Pending';
+        statusIcon = Icons.pending_rounded;
+    }
+
     final now = DateTime.now();
     final diff = now.difference(transaction.date);
     String dateText;
@@ -892,13 +1036,7 @@ class _EarningsRow extends StatelessWidget {
                   color: statusBg,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  isCompleted
-                      ? Icons.check_circle_rounded
-                      : Icons.pending_rounded,
-                  color: statusColor,
-                  size: 20,
-                ),
+                child: Icon(statusIcon, color: statusColor, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -915,8 +1053,9 @@ class _EarningsRow extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       dateText,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: AppColors.lightHint),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
                     ),
                   ],
                 ),
@@ -925,23 +1064,26 @@ class _EarningsRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '+\$${transaction.amount.toStringAsFixed(2)}',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: const Color(0xFF047E0D),
+                    '+EGP ${transaction.amount.toStringAsFixed(2)}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: const Color(0xFF9BC53D),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 4),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: statusBg,
-                      borderRadius: BorderRadius.circular(AppRadius.full),
+                      borderRadius: BorderRadius.circular(9999),
                     ),
                     child: Text(
-                      isCompleted ? 'Completed' : 'Pending',
+                      statusLabel,
                       style: theme.textTheme.labelSmall?.copyWith(
-                          color: statusColor, fontWeight: FontWeight.w600),
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -950,205 +1092,121 @@ class _EarningsRow extends StatelessWidget {
           ),
         ),
         if (showDivider)
-          const Divider(
-              height: 1,
-              indent: 16,
-              endIndent: 16,
-              color: AppColors.lightDivider),
+          Divider(
+            height: 1,
+            indent: 16,
+            endIndent: 16,
+            color: colorScheme.outline.withValues(alpha: 0.1),
+          ),
       ],
     );
   }
 }
 
-class _StatCardSkeleton extends StatelessWidget {
-  const _StatCardSkeleton();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 96,
-      decoration: BoxDecoration(
-        color: AppColors.lightSurface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border:
-            Border.all(color: AppColors.lightPrimary.withValues(alpha: 0.08)),
-      ),
-    );
-  }
-}
+// ── Activity Breakdown Card ────────────────────────────────────────────────────
 
-class StatCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String value;
-  final String label;
-  final String trend;
-
-  const StatCard({
-    super.key,
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-    required this.trend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: AppSpacing.paddingLg,
-      decoration: BoxDecoration(
-        color: AppColors.lightSurface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.27),
-            offset: const Offset(0, 8),
-            blurRadius: 16,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              Text(trend,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppColors.lightSuccess,
-                      fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          const SizedBox(height: AppSpacing.xs),
-          Text(value,
-              style: theme.textTheme.headlineMedium?.copyWith(
-                  color: AppColors.lightPrimaryText,
-                  fontWeight: FontWeight.w800)),
-          Text(label,
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: AppColors.lightSecondaryText)),
-        ],
-      ),
-    );
-  }
-}
-
-class ActivityItem extends StatelessWidget {
+class _ActivityBreakdownCard extends StatelessWidget {
   final String title;
   final int bookings;
-  final int likes;
-  final double avgRating;
-  final String revenue;
-  final String imageUrl;
+  final double revenue;
+  final double fillRate;
   final VoidCallback? onTap;
 
-  const ActivityItem({
-    super.key,
+  const _ActivityBreakdownCard({
     required this.title,
     required this.bookings,
-    required this.likes,
-    required this.avgRating,
     required this.revenue,
-    required this.imageUrl,
+    required this.fillRate,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isNetwork = imageUrl.startsWith('http');
-    return Material(
-      color: AppColors.lightSurface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-        side: const BorderSide(color: AppColors.lightDivider),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: AppSpacing.md),
-          padding: AppSpacing.paddingMd,
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: isNetwork
-                    ? Image.network(imageUrl,
-                        width: 64, height: 64, fit: BoxFit.cover)
-                    : Image.asset(imageUrl,
-                        width: 64, height: 64, fit: BoxFit.cover),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                            color: AppColors.lightPrimaryText,
-                            fontWeight: FontWeight.bold),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      const Icon(Icons.group_rounded,
-                          color: AppColors.lightHint, size: 14),
-                      const SizedBox(width: 4),
-                      Text('$bookings',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.lightSecondaryText)),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.favorite_rounded,
-                          color: AppColors.likeRed, size: 14),
-                      const SizedBox(width: 4),
-                      Text('$likes',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.lightSecondaryText)),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.star_rounded,
-                          color: AppColors.lightAccent, size: 14),
-                      const SizedBox(width: 4),
-                      Text(avgRating > 0 ? avgRating.toStringAsFixed(1) : 'N/A',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.lightSecondaryText)),
-                    ]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'EGP ${revenue.toStringAsFixed(0)}',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(revenue,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                          color: AppColors.lightAccent,
-                          fontWeight: FontWeight.bold)),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFF39FF14).withValues(alpha: 0.13),
-                        borderRadius: BorderRadius.circular(AppRadius.full)),
-                    child: Text('Active',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                            color: const Color(0xFF39FF14),
-                            fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.confirmation_number_outlined,
+                      size: 14,
+                      color: colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$bookings bookings',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(fillRate * 100).toStringAsFixed(0)}% full',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: fillRate,
+                  borderRadius: BorderRadius.circular(4),
+                  backgroundColor:
+                      colorScheme.outline.withValues(alpha: 0.1),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF9BC53D)), // lime
+                  minHeight: 6,
+                ),
+              ],
+            ),
           ),
         ),
       ),
