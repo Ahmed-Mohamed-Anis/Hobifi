@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/wallet_service.dart';
 import 'package:hobby_haven/theme.dart';
-import 'package:hobby_haven/widgets/app_back_button.dart';
 import 'package:intl/intl.dart';
 
 class WalletScreen extends StatefulWidget {
@@ -80,7 +79,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Available: \$${availableBalance.toStringAsFixed(2)}',
+                  'Available: EGP ${availableBalance.toStringAsFixed(2)}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
@@ -89,7 +88,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 TextFormField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Amount', prefixText: '\$ '),
+                  decoration: const InputDecoration(labelText: 'Amount', prefixText: 'EGP '),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Enter amount';
                     final amount = double.tryParse(v);
@@ -190,8 +189,6 @@ class _WalletScreenState extends State<WalletScreen> {
                         padding: AppSpacing.paddingLg,
                         child: Row(
                           children: [
-                            const AppBackButton(),
-                            const SizedBox(width: 12),
                             Text('Wallet', style: theme.textTheme.headlineMedium?.copyWith(
                               color: colorScheme.onSurface,
                               fontWeight: FontWeight.bold,
@@ -225,10 +222,10 @@ class _WalletScreenState extends State<WalletScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '\$${walletService.balance.toStringAsFixed(2)}',
-                                style: theme.textTheme.displayMedium?.copyWith(
+                                'EGP ${walletService.balance.toStringAsFixed(2)}',
+                                style: theme.textTheme.headlineLarge?.copyWith(
                                   color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                               const SizedBox(height: 20),
@@ -236,12 +233,12 @@ class _WalletScreenState extends State<WalletScreen> {
                                 children: [
                                   _BalanceStat(
                                     label: 'Total Earned',
-                                    value: '\$${walletService.totalEarned.toStringAsFixed(2)}',
+                                    value: 'EGP ${walletService.totalEarned.toStringAsFixed(2)}',
                                   ),
                                   const SizedBox(width: 32),
                                   _BalanceStat(
                                     label: 'Withdrawn',
-                                    value: '\$${walletService.totalWithdrawn.toStringAsFixed(2)}',
+                                    value: 'EGP ${walletService.totalWithdrawn.toStringAsFixed(2)}',
                                   ),
                                 ],
                               ),
@@ -254,7 +251,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                     borderRadius: BorderRadius.circular(AppRadius.full),
                                   ),
                                   child: Text(
-                                    'Pending payouts: \$${walletService.pendingPayouts.toStringAsFixed(2)}',
+                                    'Pending payouts: EGP ${walletService.pendingPayouts.toStringAsFixed(2)}',
                                     style: theme.textTheme.labelSmall?.copyWith(color: Colors.white),
                                   ),
                                 ),
@@ -366,8 +363,24 @@ class _TransactionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isEarning = transaction.type == 'earning';
-    final icon = isEarning ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
-    final color = isEarning ? AppColors.lightSuccess : AppColors.lightError;
+
+    Color badgeColor;
+    IconData badgeIcon;
+    switch (transaction.type) {
+      case 'earning':
+        badgeColor = const Color(0xFF9BC53D);
+        badgeIcon = Icons.check_rounded;
+      case 'refund_deduction':
+        badgeColor = const Color(0xFFE53935);
+        badgeIcon = Icons.arrow_back_rounded;
+      default: // payout or unknown
+        badgeColor = const Color(0xFFE88B3C);
+        badgeIcon = Icons.access_time_rounded;
+    }
+
+    final amountColor = isEarning
+        ? const Color(0xFF9BC53D)
+        : const Color(0xFFE53935);
     final sign = isEarning ? '+' : '-';
 
     return Container(
@@ -382,10 +395,10 @@ class _TransactionCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: badgeColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(badgeIcon, color: badgeColor, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -411,9 +424,9 @@ class _TransactionCard extends StatelessWidget {
             ),
           ),
           Text(
-            '$sign\$${transaction.amount.toStringAsFixed(2)}',
+            '$sign EGP ${transaction.amount.toStringAsFixed(2)}',
             style: theme.textTheme.titleMedium?.copyWith(
-              color: color,
+              color: amountColor,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -439,13 +452,13 @@ class _PayoutRequestCard extends StatelessWidget {
         statusColor = Colors.blue;
         statusIcon = Icons.thumb_up_rounded;
       case 'completed':
-        statusColor = AppColors.lightSuccess;
+        statusColor = const Color(0xFF9BC53D);
         statusIcon = Icons.check_circle_rounded;
       case 'rejected':
-        statusColor = AppColors.lightError;
+        statusColor = const Color(0xFFE53935);
         statusIcon = Icons.cancel_rounded;
       default: // pending
-        statusColor = Colors.orange;
+        statusColor = const Color(0xFFE88B3C);
         statusIcon = Icons.schedule_rounded;
     }
 
@@ -461,7 +474,7 @@ class _PayoutRequestCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.1),
+              color: statusColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(statusIcon, color: statusColor, size: 20),
@@ -494,7 +507,7 @@ class _PayoutRequestCard extends StatelessWidget {
             ),
           ),
           Text(
-            '\$${request.amount.toStringAsFixed(2)}',
+            'EGP ${request.amount.toStringAsFixed(2)}',
             style: theme.textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurface,
               fontWeight: FontWeight.bold,
