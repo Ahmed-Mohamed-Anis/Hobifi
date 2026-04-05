@@ -67,7 +67,7 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
       final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
       if (file == null) return;
       final Uint8List bytes = await file.readAsBytes();
-      final String? ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
+      final String ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
       final ok = await auth.changeAvatar(bytes, fileExt: ext);
       if (!mounted) return;
       if (!ok) {
@@ -97,8 +97,11 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
     final themeService = context.watch<ThemeService>();
 
     final user = auth.currentUser;
-    final activities = user == null ? [] : activityService.getActivitiesByBusinessId(user.id);
+    final activities = user == null ? <dynamic>[] : activityService.getActivitiesByBusinessId(user.id);
     final bookings = bookingService.businessBookings;
+    final double avgRating = activities.isEmpty
+        ? 0.0
+        : activities.fold<double>(0.0, (sum, a) => sum + (a.rating as double)) / activities.length;
 
     return Scaffold(
       body: SafeArea(
@@ -279,6 +282,8 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
                           _StatItem(value: '${activities.length}', label: 'Activities'),
                           Container(width: 1, height: 40, color: colorScheme.outline.withValues(alpha: 0.3)),
                           _StatItem(value: '${bookings.length}', label: 'Bookings'),
+                          Container(width: 1, height: 40, color: colorScheme.outline.withValues(alpha: 0.3)),
+                          _StatItem(value: avgRating.toStringAsFixed(1), label: 'Rating'),
                         ],
                       ),
                     ],
@@ -435,7 +440,8 @@ class _DarkModeToggle extends StatelessWidget {
               Switch.adaptive(
                 value: isDarkMode,
                 onChanged: (_) => onToggle(),
-                activeColor: colorScheme.primary,
+                activeThumbColor: colorScheme.primary,
+                activeTrackColor: colorScheme.primary.withValues(alpha: 0.4),
               ),
             ],
           ),
