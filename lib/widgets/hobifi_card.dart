@@ -111,27 +111,36 @@ class HobifiCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.star_rounded,
-                        size: 14,
-                        color: cs.tertiary,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        activity.rating.toStringAsFixed(1),
-                        style: tt.bodySmall?.copyWith(color: Colors.white),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '(${activity.reviewCount})',
-                        style: tt.bodySmall?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.75),
+                  if (activity.reviewCount > 0)
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star_rounded,
+                          size: 14,
+                          color: cs.tertiary,
                         ),
+                        const SizedBox(width: 3),
+                        Text(
+                          activity.rating.toStringAsFixed(1),
+                          style: tt.bodySmall?.copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '(${activity.reviewCount})',
+                          style: tt.bodySmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      'New',
+                      style: tt.bodySmall?.copyWith(
+                        color: cs.tertiary,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
             ),
@@ -231,16 +240,26 @@ class HobifiCard extends StatelessWidget {
                 // Metadata row
                 Row(
                   children: [
-                    Icon(
-                      Icons.star_rounded,
-                      size: 14,
-                      color: cs.tertiary,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      activity.rating.toStringAsFixed(1),
-                      style: tt.bodySmall,
-                    ),
+                    if (activity.reviewCount > 0) ...[
+                      Icon(
+                        Icons.star_rounded,
+                        size: 14,
+                        color: cs.tertiary,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        activity.rating.toStringAsFixed(1),
+                        style: tt.bodySmall,
+                      ),
+                    ] else ...[
+                      Text(
+                        'New',
+                        style: tt.bodySmall?.copyWith(
+                          color: cs.tertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 8),
 
                     // Category chip

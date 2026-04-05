@@ -204,25 +204,34 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.star_rounded,
-                            color: colorScheme.tertiary, size: 18),
-                        const SizedBox(width: 4),
-                        Text(
-                          activity.rating.toStringAsFixed(1),
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '(${activity.reviewCount} reviews)',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.5),
+                    if (activity.reviewCount > 0)
+                      Row(
+                        children: [
+                          Icon(Icons.star_rounded,
+                              color: colorScheme.tertiary, size: 18),
+                          const SizedBox(width: 4),
+                          Text(
+                            activity.rating.toStringAsFixed(1),
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '(${activity.reviewCount} reviews)',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        'New — no reviews yet',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.tertiary,
+                          fontWeight: FontWeight.w600,
                         ),
-                      ],
-                    ),
+                      ),
 
                     // 2. Quick Info Pills
                     const SizedBox(height: 16),
