@@ -1,13 +1,16 @@
 import 'package:flutter/foundation.dart';
+import 'package:hobby_haven/models/activity_model.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 
 class LikeService extends ChangeNotifier {
   final Set<String> _likedActivityIds = <String>{};
+  List<ActivityModel> _likedActivities = [];
   bool _isLoading = false;
   String? _loadedForUserId;
 
   bool get isLoading => _isLoading;
   Set<String> get likedActivityIds => _likedActivityIds;
+  List<ActivityModel> get likedActivities => _likedActivities;
 
   Future<void> loadLikes(String userId) async {
     if (_loadedForUserId == userId && _likedActivityIds.isNotEmpty) return;
@@ -34,6 +37,29 @@ class LikeService extends ChangeNotifier {
     }
   }
 
+  /// Fetch full activity objects for all liked IDs
+  Future<void> loadLikedActivities() async {
+    if (_likedActivityIds.isEmpty) {
+      _likedActivities = [];
+      notifyListeners();
+      return;
+    }
+    try {
+      final data = await SupabaseConfig.client
+          .from('activities')
+          .select()
+          .inFilter('id', _likedActivityIds.toList())
+          .order('created_at', ascending: false) as List<dynamic>;
+      _likedActivities = data
+          .map((row) => ActivityModel.fromJson(Map<String, dynamic>.from(row as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('Failed to load liked activities: $e');
+      _likedActivities = [];
+    }
+    notifyListeners();
+  }
+
   bool isLiked(String activityId) => _likedActivityIds.contains(activityId);
 
   Future<void> toggleLike(String userId, String activityId) async {
@@ -48,6 +74,7 @@ class LikeService extends ChangeNotifier {
       _likedActivityIds.add(activityId);
     } else {
       _likedActivityIds.remove(activityId);
+      _likedActivities.removeWhere((a) => a.id == activityId);
     }
     notifyListeners();
 

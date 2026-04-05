@@ -85,7 +85,7 @@ class _SavedScreenState extends State<SavedScreen> {
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: HobifiCard(
                                   activity: activity,
-                                  isLiked: true,
+                                  isLiked: likeService.isLiked(activity.id),
                                   onTap: () => context.push(
                                       '${AppRoutes.activity}/${activity.id}'),
                                   onLikeTap: () {
