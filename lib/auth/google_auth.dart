@@ -36,7 +36,7 @@ Future<User?> googleSignInFunc() async {
 
   final launched = await supabase.auth.signInWithOAuth(
     OAuthProvider.google,
-    redirectTo: 'io.supabase.hobifiapo://login-callback/',
+    redirectTo: 'io.supabase.hobifi://login-callback/',
   );
 
   if (!launched) {

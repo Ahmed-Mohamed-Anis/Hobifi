@@ -49,10 +49,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>io.supabase.hobifiapo</string>
+			<string>io.supabase.hobifi</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>io.supabase.hobifiapo</string>
+				<string>io.supabase.hobifi</string>
 			</array>
 		</dict>
 	</array>
