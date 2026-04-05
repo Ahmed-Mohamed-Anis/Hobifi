@@ -16,6 +16,8 @@ class TicketScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final bookingService = context.watch<BookingService>();
 
     // Find the booking
@@ -41,18 +43,18 @@ class TicketScreen extends StatelessWidget {
     final timeStr = DateFormat('h:mm a').format(booking.dateTime);
 
     return Scaffold(
-      backgroundColor: AppColors.lightBackground,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: AppColors.lightPrimaryText),
+          icon: Icon(Icons.close_rounded, color: colorScheme.onSurface),
           onPressed: () => context.go(AppRoutes.profile),
         ),
         title: Text(
           'Your Ticket',
           style: theme.textTheme.titleLarge?.copyWith(
-            color: AppColors.lightPrimaryText,
+            color: colorScheme.onSurface,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -66,11 +68,11 @@ class TicketScreen extends StatelessWidget {
             // Ticket Card
             Container(
               decoration: BoxDecoration(
-                color: AppColors.lightSurface,
+                color: colorScheme.surface,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
                     offset: const Offset(0, 8),
                     blurRadius: 24,
                   ),
@@ -145,22 +147,35 @@ class TicketScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Dashed divider
+                  // Ticket tear effect
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Row(
-                      children: List.generate(
-                        30,
-                        (index) => Expanded(
-                          child: Container(
-                            height: 2,
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            color: index.isEven
-                                ? AppColors.lightDivider
-                                : Colors.transparent,
+                      children: [
+                        // Left notch
+                        Container(
+                          width: 16, height: 32,
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(16)),
                           ),
                         ),
-                      ),
+                        // Dashed line
+                        Expanded(
+                          child: CustomPaint(
+                            size: const Size(double.infinity, 1),
+                            painter: _DashedLinePainter(color: colorScheme.outline.withValues(alpha: 0.3)),
+                          ),
+                        ),
+                        // Right notch
+                        Container(
+                          width: 16, height: 32,
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   // Ticket Details
@@ -225,16 +240,16 @@ class TicketScreen extends StatelessWidget {
                   // QR Code Section
                   Container(
                     padding: AppSpacing.paddingLg,
-                    decoration: const BoxDecoration(
-                      color: AppColors.lightBackground,
-                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                    decoration: BoxDecoration(
+                      color: theme.scaffoldBackgroundColor,
+                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
                     ),
                     child: Column(
                       children: [
                         Text(
                           'Scan at entry',
                           style: theme.textTheme.labelMedium?.copyWith(
-                            color: AppColors.lightSecondaryText,
+                            color: colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.md),
@@ -263,7 +278,7 @@ class TicketScreen extends StatelessWidget {
                         Text(
                           booking.id.toUpperCase(),
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: AppColors.lightHint,
+                            color: colorScheme.onSurface.withValues(alpha: 0.4),
                             letterSpacing: 2,
                           ),
                         ),
@@ -296,9 +311,9 @@ class TicketScreen extends StatelessWidget {
             Container(
               padding: AppSpacing.paddingMd,
               decoration: BoxDecoration(
-                color: AppColors.lightSurface,
+                color: colorScheme.surface,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.lightDivider),
+                border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
               ),
               child: Row(
                 children: [
@@ -322,22 +337,22 @@ class TicketScreen extends StatelessWidget {
                         Text(
                           'Need help?',
                           style: theme.textTheme.labelLarge?.copyWith(
-                            color: AppColors.lightPrimaryText,
+                            color: colorScheme.onSurface,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           'Contact support for any issues',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.lightSecondaryText,
+                            color: colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
-                    color: AppColors.lightHint,
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
                 ],
               ),
@@ -356,6 +371,7 @@ class TicketScreen extends StatelessWidget {
     bool fullWidth = false,
   }) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Row(
       children: [
         Container(
@@ -374,13 +390,13 @@ class TicketScreen extends StatelessWidget {
               Text(
                 label,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.lightHint,
+                  color: colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
               ),
               Text(
                 value,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: AppColors.lightPrimaryText,
+                  color: colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
                 maxLines: fullWidth ? 2 : 1,
@@ -418,4 +434,26 @@ class TicketScreen extends StatelessWidget {
         return 'CANCELLED';
     }
   }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  _DashedLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+    double x = 0;
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, 0), Offset(x + dashWidth, 0), paint);
+      x += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
