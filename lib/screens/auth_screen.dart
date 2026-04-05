@@ -350,70 +350,166 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildInputField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    TextInputType? keyboardType,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildFormCard(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    AuthService authService,
+    Color accentColor,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Name field (sign up only)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: _isSignUp
+                ? Column(
+                    children: [
+                      _buildInputField(
+                        controller: _nameController,
+                        label: 'Full Name',
+                        hint: 'How should we call you?',
+                        icon: Icons.person_outline_rounded,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+
+          // Email field
+          _buildInputField(
+            controller: _emailController,
+            label: 'Email',
+            hint: 'your@email.com',
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 12),
+
+          // Password field
+          _buildInputField(
+            controller: _passwordController,
+            label: 'Password',
+            hint: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
+            icon: Icons.lock_outline_rounded,
+            obscure: true,
+          ),
+
+          if (!_isSignUp) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _showForgotPasswordDialog,
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+                child: Text(
+                  'Forgot Password?',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: accentColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // Primary action button
+          if (authService.isLoading)
+            Center(
+              child: SizedBox(
+                height: 52,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    color: accentColor,
+                    strokeWidth: 3,
+                  ),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: FilledButton(
+                onPressed: _handleAuth,
+                style: FilledButton.styleFrom(
+                  backgroundColor: accentColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(
+                  _isSignUp ? 'Create Account' : 'Sign In',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider(ColorScheme colorScheme) {
+    return Row(
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.indigo.withValues(alpha: 0.7),
-            letterSpacing: 0.3,
+        Expanded(child: Container(height: 1, color: colorScheme.outlineVariant)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'or continue with',
+            style: TextStyle(
+              color: colorScheme.onSurface.withValues(alpha: 0.4),
+              fontSize: 12,
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          obscureText: obscure,
-          keyboardType: keyboardType,
-          style: const TextStyle(
-            color: AppColors.indigo,
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
+        Expanded(child: Container(height: 1, color: colorScheme.outlineVariant)),
+      ],
+    );
+  }
+
+  Widget _buildSocialButtons(ColorScheme colorScheme) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildSocialButton(
+            icon: Icons.g_mobiledata,
+            label: 'Google',
+            colorScheme: colorScheme,
+            onTap: _handleGoogleSignIn,
           ),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              color: AppColors.indigo.withValues(alpha: 0.35),
-              fontSize: 15,
-            ),
-            prefixIcon: Icon(icon, color: AppColors.indigo.withValues(alpha: 0.5), size: 20),
-            suffixIcon: obscure 
-              ? Icon(Icons.visibility_off_rounded, color: AppColors.indigo.withValues(alpha: 0.4), size: 20)
-              : null,
-            filled: true,
-            fillColor: AppColors.cream.withValues(alpha: 0.5),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: AppColors.indigo.withValues(alpha: 0.08)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: AppColors.indigo.withValues(alpha: 0.08)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.orange, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildSocialButton(
+            icon: Icons.apple_rounded,
+            label: 'Apple',
+            colorScheme: colorScheme,
+            onTap: _handleAppleSignIn,
           ),
         ),
       ],
     );
   }
-  
+
   Widget _buildSocialButton({
-    required IconData icon, 
+    required IconData icon,
     required String label,
+    required ColorScheme colorScheme,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -421,19 +517,22 @@ class _AuthScreenState extends State<AuthScreen> {
       child: Container(
         height: 52,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          border: Border.all(color: colorScheme.outline),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: icon == Icons.g_mobiledata ? 28 : 22, color: Colors.white),
+            Icon(
+              icon,
+              size: icon == Icons.g_mobiledata ? 28 : 22,
+              color: colorScheme.onSurface,
+            ),
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -443,7 +542,71 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
     );
   }
-  
+
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    bool obscure = false,
+    TextInputType? keyboardType,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final accentColor = _isUser ? AppColors.orange : AppColors.lime;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.7),
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          keyboardType: keyboardType,
+          style: TextStyle(
+            color: colorScheme.onSurface,
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(
+              color: colorScheme.onSurface.withValues(alpha: 0.35),
+              fontSize: 15,
+            ),
+            prefixIcon: Icon(icon, color: colorScheme.onSurface.withValues(alpha: 0.5), size: 20),
+            suffixIcon: obscure
+                ? Icon(Icons.visibility_off_rounded, color: colorScheme.onSurface.withValues(alpha: 0.4), size: 20)
+                : null,
+            filled: true,
+            fillColor: colorScheme.surfaceContainerLowest,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colorScheme.outlineVariant),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colorScheme.outlineVariant),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: accentColor, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
 }
 
 // Forgot Password Dialog with multi-step flow
