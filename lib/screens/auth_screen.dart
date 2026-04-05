@@ -20,11 +20,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final _nameController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
@@ -329,8 +324,9 @@ class _AuthScreenState extends State<AuthScreen> {
     required ColorScheme colorScheme,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(9999),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -341,7 +337,7 @@ class _AuthScreenState extends State<AuthScreen> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5),
+            color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface.withValues(alpha: 0.5),
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             fontSize: 14,
           ),
@@ -512,8 +508,9 @@ class _AuthScreenState extends State<AuthScreen> {
     required ColorScheme colorScheme,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         height: 52,
         decoration: BoxDecoration(
