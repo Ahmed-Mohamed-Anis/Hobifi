@@ -120,7 +120,11 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   Future<void> _handleAuth() async {
     final authService = context.read<AuthService>();
     final role = _isUser ? UserRole.user : UserRole.business;
-    
+    // Capture ScaffoldMessenger before async gap — the widget may rebuild
+    // during signIn (GoRouter refreshListenable fires on notifyListeners),
+    // which can unmount this State and make context invalid.
+    final messenger = ScaffoldMessenger.of(context);
+
     Map<String, dynamic> result;
     if (_isSignUp) {
       result = await authService.signUp(
@@ -132,36 +136,40 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     } else {
       result = await authService.signIn(_emailController.text, _passwordController.text, role);
     }
-    
-    if (!mounted) return;
-    
+
     if (result['success'] == true) {
+      if (!mounted) return;
       if (result['requiresConfirmation'] == true) {
         _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
       } else {
-        context.go(_isUser ? '/feed' : '/business-dashboard');
+        // Let the router redirect handle navigation based on role + onboarding state
+        context.go('/');
       }
     } else {
-      _showErrorSnackBar(result['message'] ?? 'An error occurred. Please try again.');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? 'An error occurred. Please try again.'),
+          backgroundColor: AppColors.lightError,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
     }
   }
 
   Future<void> _handleGoogleSignIn() async {
     final authService = context.read<AuthService>();
     final result = await authService.signInWithGoogle();
-    
+
     if (!mounted) return;
-    
+
     if (result['success'] == true) {
-      // Wait a moment for user profile to load, then navigate
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Wait for user profile to be loaded by the auth state listener
+      await _waitForProfile(authService);
       if (!mounted) return;
-      final user = authService.currentUser;
-      if (user?.role == UserRole.business) {
-        context.go('/business-dashboard');
-      } else {
-        context.go('/feed');
-      }
+      // Let the router redirect handle navigation based on role + onboarding state
+      context.go('/');
     } else if (result['message'] != null && !result['message'].toString().contains('cancelled')) {
       _showErrorSnackBar(result['message']);
     }
@@ -170,21 +178,27 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   Future<void> _handleAppleSignIn() async {
     final authService = context.read<AuthService>();
     final result = await authService.signInWithApple();
-    
+
     if (!mounted) return;
-    
+
     if (result['success'] == true) {
-      // Wait a moment for user profile to load, then navigate
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Wait for user profile to be loaded by the auth state listener
+      await _waitForProfile(authService);
       if (!mounted) return;
-      final user = authService.currentUser;
-      if (user?.role == UserRole.business) {
-        context.go('/business-dashboard');
-      } else {
-        context.go('/feed');
-      }
+      // Let the router redirect handle navigation based on role + onboarding state
+      context.go('/');
     } else if (result['message'] != null && !result['message'].toString().contains('cancelled')) {
       _showErrorSnackBar(result['message']);
+    }
+  }
+
+  /// Wait for the auth service to finish loading the user profile,
+  /// polling with short delays instead of a fixed wait.
+  Future<void> _waitForProfile(AuthService authService) async {
+    for (int i = 0; i < 20; i++) {
+      if (authService.currentUser != null) return;
+      await Future.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
     }
   }
 
@@ -411,31 +425,51 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                     
                     const SizedBox(height: 32),
                     
-                    // Role selector - Premium pill design
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                      ),
-                      child: Row(
-                        children: [
-                          _buildRoleTab(
-                            icon: Icons.explore_rounded,
-                            label: 'Explorer',
-                            isSelected: _isUser,
-                            onTap: () => setState(() => _isUser = true),
-                            selectedColor: AppColors.orange,
-                          ),
-                          _buildRoleTab(
-                            icon: Icons.rocket_launch_rounded,
-                            label: 'Host',
-                            isSelected: !_isUser,
-                            onTap: () => setState(() => _isUser = false),
-                            selectedColor: AppColors.lime,
-                          ),
-                        ],
+                    // Role selector - Pill toggle
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => setState(() => _isUser = true),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _isUser ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9999),
+                                ),
+                                child: Text('Explorer', style: TextStyle(
+                                  color: _isUser ? AppColors.indigo : Colors.white.withValues(alpha: 0.7),
+                                  fontWeight: _isUser ? FontWeight.w700 : FontWeight.w500,
+                                  fontSize: 14,
+                                )),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _isUser = false),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: !_isUser ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9999),
+                                ),
+                                child: Text('Host', style: TextStyle(
+                                  color: !_isUser ? AppColors.indigo : Colors.white.withValues(alpha: 0.7),
+                                  fontWeight: !_isUser ? FontWeight.w700 : FontWeight.w500,
+                                  fontSize: 14,
+                                )),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     
@@ -485,8 +519,8 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 24),
-                          
+                          const SizedBox(height: 16),
+
                           // Name field (sign up only)
                           AnimatedSize(
                             duration: const Duration(milliseconds: 250),
@@ -500,11 +534,11 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                                   hint: 'How should we call you?',
                                   icon: Icons.person_outline_rounded,
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
                               ],
                             ) : const SizedBox.shrink(),
                           ),
-                          
+
                           // Email field
                           _buildInputField(
                             controller: _emailController,
@@ -513,7 +547,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                             icon: Icons.mail_outline_rounded,
                             keyboardType: TextInputType.emailAddress,
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           
                           // Password field
                           _buildInputField(
@@ -544,13 +578,13 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                             ),
                           ],
                           
-                          const SizedBox(height: 20),
-                          
+                          const SizedBox(height: 16),
+
                           // Primary action button
                           if (authService.isLoading)
                             Center(
                               child: Container(
-                                height: 56,
+                                height: 52,
                                 alignment: Alignment.center,
                                 child: CircularProgressIndicator(
                                   color: _isUser ? AppColors.orange : AppColors.lime,
@@ -559,7 +593,19 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               ),
                             )
                           else
-                            _buildPrimaryButton(theme),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: FilledButton(
+                                onPressed: _handleAuth,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: AppColors.indigo,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                ),
+                                child: Text(_isSignUp ? 'Create Account' : 'Sign In', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -607,22 +653,11 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                     
                     // Toggle sign up/in
                     Center(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _isSignUp = !_isSignUp),
-                        child: RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.7)),
-                            children: [
-                              TextSpan(text: _isSignUp ? 'Already exploring? ' : 'New to HOBIFI? '),
-                              TextSpan(
-                                text: _isSignUp ? 'Sign In' : 'Join the Adventure',
-                                style: TextStyle(
-                                  color: _isUser ? AppColors.orange : AppColors.lime,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
+                      child: TextButton(
+                        onPressed: () => setState(() => _isSignUp = !_isSignUp),
+                        child: Text(
+                          _isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up",
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
                         ),
                       ),
                     ),
@@ -647,59 +682,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
             ),
           ),
         ],
-      ),
-    );
-  }
-  
-  Widget _buildRoleTab({
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-    required Color selectedColor,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          height: 48,
-          decoration: BoxDecoration(
-            color: isSelected ? selectedColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: isSelected ? [
-              BoxShadow(
-                color: selectedColor.withValues(alpha: 0.4),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ] : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected 
-                  ? (selectedColor == AppColors.lime ? AppColors.indigo : Colors.white)
-                  : Colors.white.withValues(alpha: 0.5),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected 
-                    ? (selectedColor == AppColors.lime ? AppColors.indigo : Colors.white)
-                    : Colors.white.withValues(alpha: 0.5),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -762,55 +744,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
           ),
         ),
       ],
-    );
-  }
-  
-  Widget _buildPrimaryButton(ThemeData theme) {
-    final isExplorer = _isUser;
-    final primaryColor = isExplorer ? AppColors.orange : AppColors.lime;
-    final textColor = isExplorer ? Colors.white : AppColors.indigo;
-    
-    return GestureDetector(
-      onTap: _handleAuth,
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isExplorer 
-              ? [primaryColor, const Color(0xFFFF6B35)]
-              : [primaryColor, const Color(0xFFB8E155)],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: primaryColor.withValues(alpha: 0.45),
-              offset: const Offset(0, 8),
-              blurRadius: 20,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _isSignUp ? 'Start Exploring' : 'Continue',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: textColor,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              _isSignUp ? Icons.arrow_forward_rounded : Icons.login_rounded,
-              color: textColor,
-              size: 22,
-            ),
-          ],
-        ),
-      ),
     );
   }
   
