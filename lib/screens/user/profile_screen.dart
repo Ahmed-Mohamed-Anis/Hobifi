@@ -6,9 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/theme.dart';
-import 'package:hobby_haven/widgets/app_back_button.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/services/like_service.dart';
+import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -30,6 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (auth.currentUser != null) {
         bookings.loadUserBookings(auth.currentUser!.id);
         context.read<LikeService>().loadLikes(auth.currentUser!.id);
+        context.read<RatingService>().loadUserRatings(auth.currentUser!.id);
       }
     });
   }
@@ -71,10 +72,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bookings = context.watch<BookingService>();
     final likeService = context.watch<LikeService>();
     final themeService = context.watch<ThemeService>();
+    final ratingService = context.watch<RatingService>();
 
     final user = auth.currentUser;
     final userBookings = user == null ? 0 : bookings.getUserBookings(user.id).length;
     final likedCount = likeService.likedActivityIds.length;
+    final reviewCount = ratingService.ratings.length;
 
     return Scaffold(
       body: SafeArea(
@@ -86,8 +89,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 padding: AppSpacing.paddingLg,
                 child: Row(
                   children: [
-                    const AppBackButton(),
-                    const SizedBox(width: 12),
                     Text('Profile', style: theme.textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface)),
                   ],
                 ),
@@ -187,6 +188,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ],
                         ),
                       ),
+                      if (user != null && user.interests.isNotEmpty && user.interests.first != 'All') ...[
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          alignment: WrapAlignment.center,
+                          children: user.interests.map((interest) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(9999),
+                              border: Border.all(color: colorScheme.primary.withValues(alpha: 0.15)),
+                            ),
+                            child: Text(
+                              interest,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          )).toList(),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       // Stats row
                       Row(
@@ -195,6 +219,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _StatItem(value: '$userBookings', label: 'Bookings'),
                           Container(width: 1, height: 40, color: colorScheme.outline.withValues(alpha: 0.3)),
                           _StatItem(value: '$likedCount', label: 'Liked'),
+                          Container(width: 1, height: 40, color: colorScheme.outline.withValues(alpha: 0.3)),
+                          _StatItem(value: '$reviewCount', label: 'Reviews'),
                         ],
                       ),
                     ],
