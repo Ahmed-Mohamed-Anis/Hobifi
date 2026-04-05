@@ -200,7 +200,7 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(height: size.height * 0.12),
+                SizedBox(height: size.height * 0.15),
 
                 // Logo block
                 _buildLogoBlock(theme, colorScheme),
