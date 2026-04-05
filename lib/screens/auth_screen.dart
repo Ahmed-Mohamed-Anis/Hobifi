@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -13,97 +12,16 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
+class _AuthScreenState extends State<AuthScreen> {
   bool _isUser = true;
   bool _isSignUp = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
-  
-  late AnimationController _constellationController;
-  late AnimationController _pulseController;
-  late AnimationController _heroController;
-  late Animation<double> _heroAnimation;
-  
-  final List<_ConstellationNode> _nodes = [];
-  final List<_ConstellationEdge> _edges = [];
-  
+
   @override
   void initState() {
     super.initState();
-    _initAnimations();
-    _initConstellationData();
-  }
-
-  void _initConstellationData() {
-    final random = Random(42);
-    
-    // Create experience nodes with hobby icons
-    final nodeData = [
-      (Icons.sports_basketball_rounded, 0.12, 0.08),
-      (Icons.music_note_rounded, 0.88, 0.12),
-      (Icons.palette_rounded, 0.08, 0.28),
-      (Icons.directions_bike_rounded, 0.92, 0.32),
-      (Icons.camera_alt_rounded, 0.18, 0.52),
-      (Icons.restaurant_rounded, 0.85, 0.55),
-      (Icons.hiking_rounded, 0.05, 0.78),
-      (Icons.sports_tennis_rounded, 0.78, 0.82),
-      (Icons.theater_comedy_rounded, 0.35, 0.06),
-      (Icons.surfing_rounded, 0.65, 0.88),
-      (Icons.brush_rounded, 0.45, 0.92),
-      (Icons.fitness_center_rounded, 0.55, 0.04),
-      (Icons.local_cafe_rounded, 0.25, 0.35),
-      (Icons.pool_rounded, 0.72, 0.25),
-    ];
-    
-    for (var i = 0; i < nodeData.length; i++) {
-      final data = nodeData[i];
-      _nodes.add(_ConstellationNode(
-        icon: data.$1,
-        x: data.$2,
-        y: data.$3,
-        size: 20 + random.nextDouble() * 16,
-        pulseDelay: random.nextDouble() * 2,
-        driftSpeed: 0.3 + random.nextDouble() * 0.4,
-        driftPhase: random.nextDouble() * pi * 2,
-      ));
-    }
-    
-    // Create connections between nearby nodes
-    for (var i = 0; i < _nodes.length; i++) {
-      for (var j = i + 1; j < _nodes.length; j++) {
-        final dx = _nodes[i].x - _nodes[j].x;
-        final dy = _nodes[i].y - _nodes[j].y;
-        final distance = sqrt(dx * dx + dy * dy);
-        if (distance < 0.35 && random.nextDouble() > 0.4) {
-          _edges.add(_ConstellationEdge(i, j, 0.15 + random.nextDouble() * 0.2));
-        }
-      }
-    }
-  }
-
-  void _initAnimations() {
-    _constellationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    )..repeat();
-    
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-    
-    _heroController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    
-    _heroAnimation = CurvedAnimation(
-      parent: _heroController,
-      curve: Curves.easeOutBack,
-    );
-    
-    _heroController.forward();
   }
 
   @override
@@ -111,9 +29,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
-    _constellationController.dispose();
-    _pulseController.dispose();
-    _heroController.dispose();
     super.dispose();
   }
 
@@ -780,120 +695,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
     );
   }
   
-}
-
-// Constellation node representing a hobby/activity
-class _ConstellationNode {
-  final IconData icon;
-  final double x;
-  final double y;
-  final double size;
-  final double pulseDelay;
-  final double driftSpeed;
-  final double driftPhase;
-  
-  const _ConstellationNode({
-    required this.icon,
-    required this.x,
-    required this.y,
-    required this.size,
-    required this.pulseDelay,
-    required this.driftSpeed,
-    required this.driftPhase,
-  });
-}
-
-// Edge connecting two nodes
-class _ConstellationEdge {
-  final int from;
-  final int to;
-  final double opacity;
-  
-  const _ConstellationEdge(this.from, this.to, this.opacity);
-}
-
-// Custom painter for constellation visualization
-class _ConstellationPainter extends CustomPainter {
-  final List<_ConstellationNode> nodes;
-  final List<_ConstellationEdge> edges;
-  final double animationValue;
-  final double pulseValue;
-  
-  _ConstellationPainter({
-    required this.nodes,
-    required this.edges,
-    required this.animationValue,
-    required this.pulseValue,
-  });
-  
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Calculate animated node positions
-    final animatedPositions = <Offset>[];
-    for (var node in nodes) {
-      final driftX = sin(animationValue * pi * 2 * node.driftSpeed + node.driftPhase) * 8;
-      final driftY = cos(animationValue * pi * 2 * node.driftSpeed + node.driftPhase + 0.5) * 6;
-      animatedPositions.add(Offset(
-        node.x * size.width + driftX,
-        node.y * size.height + driftY,
-      ));
-    }
-    
-    // Draw edges
-    for (var edge in edges) {
-      final start = animatedPositions[edge.from];
-      final end = animatedPositions[edge.to];
-      
-      final gradient = LinearGradient(
-        colors: [
-          AppColors.orange.withValues(alpha: edge.opacity * 0.4),
-          AppColors.lime.withValues(alpha: edge.opacity * 0.3),
-        ],
-      ).createShader(Rect.fromPoints(start, end));
-      
-      final paint = Paint()
-        ..shader = gradient
-        ..strokeWidth = 1
-        ..style = PaintingStyle.stroke;
-      
-      canvas.drawLine(start, end, paint);
-    }
-    
-    // Draw nodes
-    for (var i = 0; i < nodes.length; i++) {
-      final node = nodes[i];
-      final pos = animatedPositions[i];
-      
-      // Calculate pulse effect
-      final pulsePhase = (pulseValue + node.pulseDelay) % 1.0;
-      final pulse = 0.6 + sin(pulsePhase * pi * 2) * 0.4;
-      
-      // Outer glow
-      final glowPaint = Paint()
-        ..color = (i % 2 == 0 ? AppColors.orange : AppColors.lime).withValues(alpha: 0.15 * pulse)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-      
-      canvas.drawCircle(pos, node.size * 0.8, glowPaint);
-      
-      // Inner circle
-      final circlePaint = Paint()
-        ..color = (i % 2 == 0 ? AppColors.orange : AppColors.lime).withValues(alpha: 0.2 * pulse);
-      
-      canvas.drawCircle(pos, node.size * 0.5, circlePaint);
-      
-      // Center dot
-      final dotPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.6 * pulse);
-      
-      canvas.drawCircle(pos, 2, dotPaint);
-    }
-  }
-  
-  @override
-  bool shouldRepaint(covariant _ConstellationPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue || 
-           oldDelegate.pulseValue != pulseValue;
-  }
 }
 
 // Forgot Password Dialog with multi-step flow
