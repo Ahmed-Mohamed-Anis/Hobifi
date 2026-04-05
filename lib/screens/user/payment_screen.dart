@@ -1,17 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
-import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
+import 'package:hobby_haven/widgets/hobifi_shimmer.dart'; // available for skeleton states
 import 'package:url_launcher/url_launcher.dart';
-
-enum _PaymentMethod { card, wallet }
 
 class PaymentScreen extends StatefulWidget {
   final String bookingId;
@@ -35,15 +32,10 @@ class PaymentScreen extends StatefulWidget {
 
 class _PaymentScreenState extends State<PaymentScreen>
     with WidgetsBindingObserver {
-  _PaymentMethod _selectedMethod = _PaymentMethod.card;
-  final _walletPhoneController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-
   bool _isLoading = false;
   bool _paymentCompleted = false;
   bool _paymentFailed = false;
   bool _isChecking = false;
-  bool _walletPending = false; // waiting for wallet app confirmation
   String? _errorMessage;
   Timer? _pollTimer;
 
@@ -56,7 +48,6 @@ class _PaymentScreenState extends State<PaymentScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _walletPhoneController.dispose();
     _pollTimer?.cancel();
     super.dispose();
   }
@@ -94,7 +85,6 @@ class _PaymentScreenState extends State<PaymentScreen>
         _pollTimer = null;
         setState(() {
           _paymentCompleted = true;
-          _walletPending = false;
           _isChecking = false;
         });
         // Reload all bookings in background so bookings list is fresh
@@ -108,7 +98,6 @@ class _PaymentScreenState extends State<PaymentScreen>
         _pollTimer = null;
         setState(() {
           _paymentFailed = true;
-          _walletPending = false;
           _isChecking = false;
           _errorMessage = 'Payment was not successful. Please try again.';
         });
@@ -117,7 +106,6 @@ class _PaymentScreenState extends State<PaymentScreen>
         _pollTimer = null;
         setState(() {
           _isChecking = false;
-          _walletPending = false;
         });
         if (mounted) _showTimeoutDialog();
       }
@@ -182,62 +170,6 @@ class _PaymentScreenState extends State<PaymentScreen>
     }
   }
 
-  // ── WALLET FLOW ────────────────────────────────────────────────────────────
-  Future<void> _payWithWallet() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final user = context.read<AuthService>().currentUser!;
-      final paymentService = context.read<PaymentService>();
-
-      final data = await paymentService.initializePayment(
-        bookingId: widget.bookingId,
-        userId: user.id,
-        activityId: widget.activityId,
-        amount: widget.amount,
-        activityTitle: widget.activityTitle,
-        userEmail: user.email,
-        userName: user.name,
-        userPhone: user.phone ?? '',
-        paymentMethod: 'wallet',
-        walletPhone: _walletPhoneController.text.trim(),
-      );
-
-      final redirectUrl = data['redirect_url'] as String?;
-      if (redirectUrl == null || redirectUrl.isEmpty) {
-        throw Exception('No redirect URL returned from wallet payment.');
-      }
-
-      final uri = Uri.parse(redirectUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        // Show waiting state after opening wallet app
-        if (mounted) setState(() => _walletPending = true);
-      } else {
-        throw Exception('Could not open wallet app.');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = e.toString().replaceAll('Exception: ', ''));
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _handlePay() {
-    if (_selectedMethod == _PaymentMethod.card) {
-      _payWithCard();
-    } else {
-      _payWithWallet();
-    }
-  }
-
   // ── BUILD ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -280,8 +212,19 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                CircularProgressIndicator(
-                    color: colorScheme.primary, strokeWidth: 2),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: colorScheme.primary),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Verifying payment...',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -366,18 +309,19 @@ class _PaymentScreenState extends State<PaymentScreen>
                 fontWeight: FontWeight.bold,
               ),
             ),
-            Text(
-              'EGP ${widget.amount.toStringAsFixed(2)}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
+            if (widget.activityTitle.isNotEmpty)
+              Text(
+                widget.activityTitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
           ],
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: Column(
+      body: Column(
           children: [
             // Error banner
             if (_errorMessage != null)
@@ -416,171 +360,66 @@ class _PaymentScreenState extends State<PaymentScreen>
                     const SizedBox(height: AppSpacing.xl),
 
                     // ── Order Summary ─────────────────────────────────────
-                    _OrderSummaryCard(
-                      activityTitle: widget.activityTitle,
-                      bookingId: widget.bookingId,
-                      amount: widget.amount,
-                    ),
+                    _isChecking
+                        ? HobifiShimmer.card()
+                        : _OrderSummaryCard(
+                            activityTitle: widget.activityTitle,
+                            bookingId: widget.bookingId,
+                            amount: widget.amount,
+                          ),
 
                     const SizedBox(height: AppSpacing.xl),
 
-                    // ── Payment Method Selector ───────────────────────────
-                    Text(
-                      'Payment Method',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.bold,
+                    // Payment method info
+                    Container(
+                      padding: AppSpacing.paddingLg,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            offset: const Offset(0, 2),
+                            blurRadius: 12,
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _MethodTile(
-                            icon: Icons.credit_card_rounded,
-                            label: 'Card',
-                            subtitle: 'Visa, MC, Meeza',
-                            selected:
-                                _selectedMethod == _PaymentMethod.card,
-                            onTap: () => setState(() {
-                              _selectedMethod = _PaymentMethod.card;
-                              _errorMessage = null;
-                            }),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: _MethodTile(
-                            icon: Icons.phone_android_rounded,
-                            label: 'Wallet',
-                            subtitle: 'Vodafone, Orange, Etisalat',
-                            selected:
-                                _selectedMethod == _PaymentMethod.wallet,
-                            onTap: () => setState(() {
-                              _selectedMethod = _PaymentMethod.wallet;
-                              _errorMessage = null;
-                            }),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // ── Wallet Phone Input (animated) ─────────────────────
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      child: _selectedMethod == _PaymentMethod.wallet
-                          ? Padding(
-                              padding: const EdgeInsets.only(
-                                  top: AppSpacing.lg),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Wallet Phone Number',
-                                    style: theme.textTheme.titleSmall
-                                        ?.copyWith(
-                                      color: colorScheme.onSurface,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  TextFormField(
-                                    controller: _walletPhoneController,
-                                    keyboardType: TextInputType.phone,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                      LengthLimitingTextInputFormatter(11),
-                                    ],
-                                    decoration: InputDecoration(
-                                      hintText: '01xxxxxxxxx',
-                                      prefixIcon: const Icon(
-                                          Icons.phone_rounded),
-                                      border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                        borderSide: BorderSide(
-                                            color: theme.dividerColor),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                        borderSide: BorderSide(
-                                            color: colorScheme.primary,
-                                            width: 2),
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          colorScheme.surfaceContainerHighest,
-                                    ),
-                                    validator: (value) {
-                                      if (value == null ||
-                                          value.trim().isEmpty) {
-                                        return 'Please enter your wallet phone number';
-                                      }
-                                      if (!RegExp(r'^01[0125]\d{8}$')
-                                          .hasMatch(value.trim())) {
-                                        return 'Enter a valid Egyptian mobile number (e.g. 01xxxxxxxxx)';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  Text(
-                                    'You will receive a confirmation request in your wallet app.',
-                                    style: theme.textTheme.bodySmall
-                                        ?.copyWith(
-                                      color: colorScheme.onSurface
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-
-                    // ── Wallet waiting message ────────────────────────────
-                    if (_walletPending) ...[
-                      const SizedBox(height: AppSpacing.lg),
-                      Container(
-                        padding: AppSpacing.paddingMd,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                              color:
-                                  colorScheme.primary.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colorScheme.primary,
-                              ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: Text(
-                                'Waiting for approval in your wallet app…',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.primary,
-                                  fontWeight: FontWeight.w500,
+                            child: Icon(Icons.credit_card_rounded,
+                                color: colorScheme.primary, size: 22),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Pay with Card',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Visa, Mastercard, Meeza',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurface.withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
 
                     const SizedBox(height: AppSpacing.xl),
 
@@ -625,26 +464,20 @@ class _PaymentScreenState extends State<PaymentScreen>
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton.icon(
-                        onPressed: _isLoading ? null : _handlePay,
+                        onPressed: _isLoading ? null : _payWithCard,
                         icon: _isLoading
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(
-                                  color: Colors.white,
+                                  color: colorScheme.onPrimary,
                                   strokeWidth: 2,
                                 ),
                               )
-                            : Icon(
-                                _selectedMethod == _PaymentMethod.wallet
-                                    ? Icons.phone_android_rounded
-                                    : Icons.payment_rounded,
-                              ),
+                            : const Icon(Icons.payment_rounded),
                         label: Text(
                           _isLoading
-                              ? (_selectedMethod == _PaymentMethod.wallet
-                                  ? 'Sending request…'
-                                  : 'Opening…')
+                              ? 'Opening…'
                               : 'Pay EGP ${widget.amount.toStringAsFixed(2)}',
                         ),
                         style: ElevatedButton.styleFrom(
@@ -688,7 +521,6 @@ class _PaymentScreenState extends State<PaymentScreen>
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -789,79 +621,3 @@ class _OrderSummaryCard extends StatelessWidget {
   }
 }
 
-class _MethodTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _MethodTile({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected
-              ? colorScheme.primary.withValues(alpha: 0.08)
-              : colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? colorScheme.primary : theme.dividerColor,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  color: selected
-                      ? colorScheme.primary
-                      : colorScheme.onSurface.withValues(alpha: 0.5),
-                  size: 22,
-                ),
-                const Spacer(),
-                if (selected)
-                  Icon(Icons.check_circle_rounded,
-                      color: colorScheme.primary, size: 18),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: selected
-                    ? colorScheme.primary
-                    : colorScheme.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.5),
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
