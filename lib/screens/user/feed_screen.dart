@@ -521,13 +521,10 @@ class _MinimalHeader extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'HOBIFI',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.secondary,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
+              Image.asset(
+                'assets/images/hobifi_logo.png',
+                height: 22,
+                fit: BoxFit.contain,
               ),
               const SizedBox(height: 4),
               Text(

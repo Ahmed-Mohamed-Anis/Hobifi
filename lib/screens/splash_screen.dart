@@ -1,6 +1,5 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class SplashScreen extends StatefulWidget {
   /// Called when the splash animation finishes
@@ -21,11 +20,6 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _logoController;
   late Animation<double> _logoScale;
   late Animation<double> _logoOpacity;
-
-  // Wordmark entrance
-  late AnimationController _wordmarkController;
-  late Animation<double> _wordmarkSlide;
-  late Animation<double> _wordmarkOpacity;
 
   // Shimmer on logo
   late AnimationController _shimmerController;
@@ -59,21 +53,6 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    // Wordmark: slide up + fade in
-    _wordmarkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _wordmarkSlide = Tween<double>(begin: 30.0, end: 0.0).animate(
-      CurvedAnimation(parent: _wordmarkController, curve: Curves.easeOutCubic),
-    );
-    _wordmarkOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _wordmarkController,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeOut),
-      ),
-    );
-
     // Shimmer loop
     _shimmerController = AnimationController(
       vsync: this,
@@ -100,10 +79,6 @@ class _SplashScreenState extends State<SplashScreen>
     _logoController.forward();
     await Future.delayed(const Duration(milliseconds: 700));
 
-    // Wordmark slides up
-    _wordmarkController.forward();
-    await Future.delayed(const Duration(milliseconds: 600));
-
     // Shimmer starts looping
     _shimmerController.repeat();
 
@@ -119,7 +94,6 @@ class _SplashScreenState extends State<SplashScreen>
   void dispose() {
     _patternController.dispose();
     _logoController.dispose();
-    _wordmarkController.dispose();
     _shimmerController.dispose();
     _exitController.dispose();
     super.dispose();
@@ -163,74 +137,48 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
 
-            // Center content
+            // Center content — logo image
             Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Logo icon with shimmer
-                  AnimatedBuilder(
-                    animation: _logoController,
-                    builder: (context, child) => Opacity(
-                      opacity: _logoOpacity.value,
-                      child: Transform.scale(
-                        scale: _logoScale.value,
-                        child: child,
-                      ),
-                    ),
-                    child: AnimatedBuilder(
-                      animation: _shimmerController,
-                      builder: (context, child) {
-                        return ShaderMask(
-                          shaderCallback: (bounds) {
-                            final shimmerProgress = _shimmerController.value;
-                            return LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: const [
-                                Color(0xFFF5EED6),
-                                Color(0xFFFFFFFF),
-                                Color(0xFFF5EED6),
-                              ],
-                              stops: [
-                                (shimmerProgress - 0.3).clamp(0.0, 1.0),
-                                shimmerProgress.clamp(0.0, 1.0),
-                                (shimmerProgress + 0.3).clamp(0.0, 1.0),
-                              ],
-                            ).createShader(bounds);
-                          },
-                          blendMode: BlendMode.srcIn,
-                          child: child!,
-                        );
+              child: AnimatedBuilder(
+                animation: _logoController,
+                builder: (context, child) => Opacity(
+                  opacity: _logoOpacity.value,
+                  child: Transform.scale(
+                    scale: _logoScale.value,
+                    child: child,
+                  ),
+                ),
+                child: AnimatedBuilder(
+                  animation: _shimmerController,
+                  builder: (context, child) {
+                    return ShaderMask(
+                      shaderCallback: (bounds) {
+                        final shimmerProgress = _shimmerController.value;
+                        return LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: const [
+                            Color(0xFFF5EED6),
+                            Color(0xFFFFFFFF),
+                            Color(0xFFF5EED6),
+                          ],
+                          stops: [
+                            (shimmerProgress - 0.3).clamp(0.0, 1.0),
+                            shimmerProgress.clamp(0.0, 1.0),
+                            (shimmerProgress + 0.3).clamp(0.0, 1.0),
+                          ],
+                        ).createShader(bounds);
                       },
-                      child: _buildLogoIcon(),
-                    ),
+                      blendMode: BlendMode.srcIn,
+                      child: child!,
+                    );
+                  },
+                  child: Image.asset(
+                    'assets/images/hobifi_logo.png',
+                    width: 220,
+                    fit: BoxFit.contain,
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // "Hobifi" wordmark
-                  AnimatedBuilder(
-                    animation: _wordmarkController,
-                    builder: (context, child) => Opacity(
-                      opacity: _wordmarkOpacity.value,
-                      child: Transform.translate(
-                        offset: Offset(0, _wordmarkSlide.value),
-                        child: child,
-                      ),
-                    ),
-                    child: Text(
-                      'Hobifi',
-                      style: GoogleFonts.poppins(
-                        fontSize: 52,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFFF5EED6),
-                        letterSpacing: -1,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -239,87 +187,6 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  /// Builds the Hobifi logo icon (map marker + sparkle, matching the branding)
-  Widget _buildLogoIcon() {
-    return SizedBox(
-      width: 100,
-      height: 100,
-      child: CustomPaint(
-        painter: _HobifiLogoPainter(),
-      ),
-    );
-  }
-}
-
-/// Draws the Hobifi logo mark: a stylized map/book icon with a sparkle
-class _HobifiLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFF5EED6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final w = size.width;
-    final h = size.height;
-
-    // Outer rounded rectangle frame
-    final outerRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.15, h * 0.05, w * 0.7, h * 0.75),
-      const Radius.circular(14),
-    );
-    canvas.drawRRect(outerRect, paint);
-
-    // Center fold line (book spine)
-    canvas.drawLine(
-      Offset(w * 0.5, h * 0.15),
-      Offset(w * 0.5, h * 0.7),
-      paint,
-    );
-
-    // Left page curve
-    final leftPath = Path()
-      ..moveTo(w * 0.22, h * 0.2)
-      ..quadraticBezierTo(w * 0.36, h * 0.32, w * 0.5, h * 0.2);
-    canvas.drawPath(leftPath, paint);
-
-    // Right page curve
-    final rightPath = Path()
-      ..moveTo(w * 0.5, h * 0.2)
-      ..quadraticBezierTo(w * 0.64, h * 0.32, w * 0.78, h * 0.2);
-    canvas.drawPath(rightPath, paint);
-
-    // Bottom V (map pin point)
-    final vPath = Path()
-      ..moveTo(w * 0.3, h * 0.75)
-      ..lineTo(w * 0.5, h * 0.95)
-      ..lineTo(w * 0.7, h * 0.75);
-    canvas.drawPath(vPath, paint);
-
-    // Sparkle (top right)
-    final sparkPaint = Paint()
-      ..color = const Color(0xFFF5EED6)
-      ..style = PaintingStyle.fill;
-
-    _drawSparkle(canvas, Offset(w * 0.72, h * 0.12), 6, sparkPaint);
-  }
-
-  void _drawSparkle(Canvas canvas, Offset center, double radius, Paint paint) {
-    final path = Path();
-    // 4-pointed star
-    path.moveTo(center.dx, center.dy - radius);
-    path.quadraticBezierTo(center.dx + 2, center.dy - 2, center.dx + radius, center.dy);
-    path.quadraticBezierTo(center.dx + 2, center.dy + 2, center.dx, center.dy + radius);
-    path.quadraticBezierTo(center.dx - 2, center.dy + 2, center.dx - radius, center.dy);
-    path.quadraticBezierTo(center.dx - 2, center.dy - 2, center.dx, center.dy - radius);
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Paints a tiled pattern of hobby-related icons with slow drift
