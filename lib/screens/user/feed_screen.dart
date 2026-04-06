@@ -523,7 +523,7 @@ class _MinimalHeader extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/images/hobifi_logo.png',
-                height: 28,
+                height: 35,
                 fit: BoxFit.contain,
               ),
               const SizedBox(height: 4),

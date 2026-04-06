@@ -50,7 +50,21 @@ class _AuthScreenState extends State<AuthScreen> {
     if (result['success'] == true) {
       if (!mounted) return;
       if (result['requiresConfirmation'] == true) {
-        _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
+        // Auto sign-in after sign-up so the user doesn't have to re-enter credentials
+        final signInResult = await authService.signIn(
+          _emailController.text,
+          _passwordController.text,
+          role,
+        );
+        if (!mounted) return;
+        if (signInResult['success'] == true) {
+          context.go('/');
+        } else if (signInResult['message']?.toString().contains('not confirmed') == true) {
+          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
+        } else {
+          // Sign-in failed for another reason — show the confirmation dialog as fallback
+          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
+        }
       } else {
         // Let the router redirect handle navigation based on role + onboarding state
         context.go('/');
@@ -183,62 +197,71 @@ class _AuthScreenState extends State<AuthScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final authService = context.watch<AuthService>();
-    final size = MediaQuery.of(context).size;
     final accentColor = _isUser ? AppColors.orange : AppColors.lime;
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(height: size.height * 0.15),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 12),
 
-                // Logo block
-                _buildLogoBlock(theme, colorScheme),
+              // Logo block
+              _buildLogoBlock(theme, colorScheme),
 
-                const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
-                // Role toggle
-                _buildRoleToggle(colorScheme),
+              // Role toggle
+              _buildRoleToggle(colorScheme),
 
-                const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
-                // Form card
-                _buildFormCard(theme, colorScheme, authService, accentColor),
+              // Form card (only this part scrolls on very small screens)
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: _buildFormCard(theme, colorScheme, authService, accentColor),
+                ),
+              ),
 
-                const SizedBox(height: 20),
+              const SizedBox(height: 12),
 
-                // Social divider
-                _buildDivider(colorScheme),
+              // Social divider
+              _buildDivider(colorScheme),
 
-                const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
-                // Social buttons
-                _buildSocialButtons(colorScheme),
+              // Social buttons
+              _buildSocialButtons(colorScheme),
 
-                const SizedBox(height: 24),
+              const SizedBox(height: 8),
 
-                // Toggle sign up/in
-                Center(
-                  child: TextButton(
-                    onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                    child: Text(
-                      _isSignUp
-                          ? 'Already have an account? Sign In'
-                          : "Don't have an account? Sign Up",
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
+              // Toggle sign up/in
+              Center(
+                child: TextButton(
+                  onPressed: () => setState(() => _isSignUp = !_isSignUp),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    _isSignUp
+                        ? 'Already have an account? Sign In'
+                        : "Don't have an account? Sign Up",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ),
+              ),
 
-                // Terms
-                Center(
+              // Terms
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8, top: 2),
+                child: Center(
                   child: Text(
                     'By continuing, you agree to our Terms & Privacy Policy',
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -247,10 +270,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-
-                const SizedBox(height: 24),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -262,7 +283,7 @@ class _AuthScreenState extends State<AuthScreen> {
       children: [
         Image.asset(
           'assets/images/hobifi_logo.png',
-          height: 48,
+          height: 150,
           fit: BoxFit.contain,
         ),
         const SizedBox(height: 12),
