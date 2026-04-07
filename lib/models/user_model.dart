@@ -8,6 +8,9 @@ class UserModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? username;
+  final String? bio;
+  final List<String> interests;
+  final String? city;
 
   UserModel({
     required this.id,
@@ -19,6 +22,9 @@ class UserModel {
     required this.createdAt,
     required this.updatedAt,
     this.username,
+    this.bio,
+    this.interests = const [],
+    this.city,
   });
 
   static DateTime _parseDate(dynamic v) {
@@ -38,6 +44,9 @@ class UserModel {
     createdAt: _parseDate(json['created_at']),
     updatedAt: _parseDate(json['updated_at']),
     username: json['username'] as String?,
+    bio: json['bio'] as String?,
+    interests: (json['interests'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+    city: json['city'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +59,9 @@ class UserModel {
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
     'username': username,
+    if (bio != null) 'bio': bio,
+    'interests': interests,
+    if (city != null) 'city': city,
   };
 
   UserModel copyWith({
@@ -62,6 +74,9 @@ class UserModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     String? username,
+    String? bio,
+    List<String>? interests,
+    String? city,
   }) => UserModel(
     id: id ?? this.id,
     email: email ?? this.email,
@@ -72,6 +87,9 @@ class UserModel {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     username: username ?? this.username,
+    bio: bio ?? this.bio,
+    interests: interests ?? this.interests,
+    city: city ?? this.city,
   );
 }
 

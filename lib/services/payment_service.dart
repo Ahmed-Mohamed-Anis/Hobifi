@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hobby_haven/models/payment_model.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
-import 'package:http/http.dart' as http;
 
 class PaymentService extends ChangeNotifier {
   List<PaymentModel> _payments = [];
@@ -32,35 +31,51 @@ class PaymentService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await http.post(
-        Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/paymob-init'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
-        },
-        body: jsonEncode({
+      // Force-refresh the session to guarantee a valid JWT.
+      // On web, the Supabase client can hold a stale token that DB
+      // calls auto-refresh but functions.invoke() does not.
+      String accessToken;
+      try {
+        final refreshed = await SupabaseConfig.auth.refreshSession();
+        accessToken = refreshed.session?.accessToken
+            ?? SupabaseConfig.auth.currentSession?.accessToken
+            ?? '';
+      } catch (_) {
+        accessToken = SupabaseConfig.auth.currentSession?.accessToken ?? '';
+      }
+
+      if (accessToken.isEmpty) {
+        throw Exception('You must be signed in to make a payment.');
+      }
+
+      debugPrint('PAYMENT DEBUG: token length=${accessToken.length}, starts=${accessToken.substring(0, 20.clamp(0, accessToken.length))}...');
+      debugPrint('PAYMENT DEBUG: session exists=${SupabaseConfig.auth.currentSession != null}, user=${SupabaseConfig.auth.currentUser?.id}');
+
+      final response = await SupabaseConfig.client.functions.invoke(
+        'paymob-init',
+        headers: {'Authorization': 'Bearer $accessToken'},
+        body: {
           'booking_id': bookingId,
-          'user_id': userId,
           'activity_id': activityId,
-          'amount': amount,
           'activity_title': activityTitle,
           'user_email': userEmail,
           'user_name': userName,
           'user_phone': userPhone,
           'payment_method': paymentMethod,
           if (walletPhone != null) 'wallet_phone': walletPhone,
-        }),
+        },
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _currentPaymentUrl = data['iframe_url'];
-        _currentPaymentToken = data['payment_token'];
+      if (response.status == 200) {
+        final data = response.data as Map<String, dynamic>;
+        _currentPaymentUrl = data['iframe_url'] as String?;
+        _currentPaymentToken = data['payment_token'] as String?;
         _isLoading = false;
         notifyListeners();
         return data;
       } else {
-        throw Exception('Failed to initialize payment: ${response.body}');
+        final body = response.data is Map ? jsonEncode(response.data) : response.data.toString();
+        throw Exception('Failed to initialize payment: $body');
       }
     } catch (e) {
       debugPrint('Payment initialization failed: $e');

@@ -24,6 +24,7 @@ class ActivityService extends ChangeNotifier {
     try {
       final data = await SupabaseService.select(
         'activities',
+        filters: {'is_public': true},
         orderBy: 'created_at',
         ascending: false,
         limit: _pageSize,
@@ -49,6 +50,7 @@ class ActivityService extends ChangeNotifier {
     try {
       final data = await SupabaseService.select(
         'activities',
+        filters: {'is_public': true},
         orderBy: 'created_at',
         ascending: false,
         limit: _pageSize,
@@ -87,6 +89,28 @@ class ActivityService extends ChangeNotifier {
 
   List<ActivityModel> getActivitiesByBusinessId(String businessId) =>
       _activities.where((a) => a.businessId == businessId).toList();
+
+  /// Server-side search — queries DB with ilike, not limited to cached activities
+  Future<List<ActivityModel>> searchActivities(String query, {String category = 'All'}) async {
+    try {
+      final pattern = '%$query%';
+      var q = SupabaseConfig.client
+          .from('activities')
+          .select()
+          .eq('is_public', true)
+          .or('title.ilike.$pattern,description.ilike.$pattern,location.ilike.$pattern,category.ilike.$pattern');
+      if (category != 'All') {
+        q = q.eq('category', category);
+      }
+      final result = await q.order('rating', ascending: false).limit(30) as List<dynamic>;
+      return result
+          .map((row) => ActivityModel.fromJson(Map<String, dynamic>.from(row as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('Search failed: $e');
+      return [];
+    }
+  }
 
   Future<void> createActivity(ActivityModel activity) async {
     try {
