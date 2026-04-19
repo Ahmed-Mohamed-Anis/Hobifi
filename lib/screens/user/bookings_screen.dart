@@ -8,7 +8,7 @@ import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
-import 'package:hobby_haven/widgets/hobifi_chip.dart';
+import 'package:hobby_haven/screens/user/saved_screen.dart' show SavedContent;
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:intl/intl.dart';
@@ -20,12 +20,14 @@ class BookingsScreen extends StatefulWidget {
   State<BookingsScreen> createState() => _BookingsScreenState();
 }
 
-class _BookingsScreenState extends State<BookingsScreen> {
-  String _selectedFilter = 'Upcoming';
+class _BookingsScreenState extends State<BookingsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authService = context.read<AuthService>();
       final bookingService = context.read<BookingService>();
@@ -36,35 +38,37 @@ class _BookingsScreenState extends State<BookingsScreen> {
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bookingService = context.watch<BookingService>();
     final authService = context.watch<AuthService>();
 
-    final allBookings = bookingService.getUserBookings(authService.currentUser?.id ?? '');
-    final List<BookingModel> filteredBookings;
-    switch (_selectedFilter) {
-      case 'Completed':
-        filteredBookings = allBookings.where((b) => b.status == BookingStatus.completed).toList();
-      case 'Cancelled':
-        filteredBookings = allBookings.where((b) => b.status == BookingStatus.cancelled).toList();
-      default: // Upcoming
-        filteredBookings = allBookings.where((b) => b.status == BookingStatus.confirmed || b.status == BookingStatus.pending).toList();
-    }
-    final upcomingBookings = allBookings.where((b) => b.status == BookingStatus.confirmed || b.status == BookingStatus.pending).toList();
+    final allBookings =
+        bookingService.getUserBookings(authService.currentUser?.id ?? '');
+    final upcomingBookings = allBookings
+        .where((b) =>
+            b.status == BookingStatus.confirmed ||
+            b.status == BookingStatus.pending)
+        .toList();
 
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
+        child: Column(
+          children: [
             // Header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: AppSpacing.paddingLg,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
+            Padding(
+              padding: AppSpacing.paddingLg,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -77,141 +81,162 @@ class _BookingsScreenState extends State<BookingsScreen> {
                         Text(
                           'You have ${upcomingBookings.length} upcoming activities',
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.6),
                           ),
                         ),
                       ],
                     ),
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: theme.colorScheme.surface,
-                      backgroundImage: (authService.currentUser?.avatarUrl != null &&
-                              (authService.currentUser!.avatarUrl!.startsWith('http') ||
-                                  authService.currentUser!.avatarUrl!.startsWith('https')))
-                          ? NetworkImage(authService.currentUser!.avatarUrl!)
-                          : null,
-                      child: (authService.currentUser?.avatarUrl == null)
-                          ? Icon(Icons.person_rounded, color: theme.colorScheme.primary)
-                          : null,
-                    ),
-                  ],
-                ),
+                  ),
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: theme.colorScheme.surface,
+                    backgroundImage: (authService.currentUser?.avatarUrl !=
+                                null &&
+                            (authService.currentUser!.avatarUrl!
+                                    .startsWith('http') ||
+                                authService.currentUser!.avatarUrl!
+                                    .startsWith('https')))
+                        ? NetworkImage(authService.currentUser!.avatarUrl!)
+                        : null,
+                    child: (authService.currentUser?.avatarUrl == null)
+                        ? Icon(Icons.person_rounded,
+                            color: theme.colorScheme.primary)
+                        : null,
+                  ),
+                ],
               ),
             ),
 
-            // Filter chips
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: AppSpacing.horizontalLg + AppSpacing.verticalMd,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      HobifiChip(
-                        label: 'Upcoming',
-                        isSelected: _selectedFilter == 'Upcoming',
-                        onTap: () => setState(() => _selectedFilter = 'Upcoming'),
-                      ),
-                      HobifiChip(
-                        label: 'Completed',
-                        isSelected: _selectedFilter == 'Completed',
-                        onTap: () => setState(() => _selectedFilter = 'Completed'),
-                      ),
-                      HobifiChip(
-                        label: 'Cancelled',
-                        isSelected: _selectedFilter == 'Cancelled',
-                        onTap: () => setState(() => _selectedFilter = 'Cancelled'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            // Tabs
+            TabBar(
+              controller: _tabController,
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor:
+                  theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              indicatorColor: theme.colorScheme.primary,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelStyle: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+              tabs: const [
+                Tab(text: 'Upcoming'),
+                Tab(text: 'Liked'),
+              ],
             ),
 
-            // Loading state
-            if (bookingService.isLoading)
-              SliverToBoxAdapter(
-                child: Column(
-                  children: List.generate(
-                    3,
-                    (_) => Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                      child: HobifiShimmer.listTile(),
-                    ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _UpcomingList(
+                    bookings: upcomingBookings,
+                    isLoading: bookingService.isLoading,
                   ),
-                ),
-              )
-            // Empty state
-            else if (filteredBookings.isEmpty)
-              SliverToBoxAdapter(
-                child: HobifiEmptyState(
-                  icon: Icons.confirmation_number_outlined,
-                  title: 'No bookings yet',
-                  subtitle: 'Explore activities and book your first experience!',
-                  actionLabel: 'Explore Activities',
-                  onAction: () => context.go(AppRoutes.feed),
-                ),
-              )
-            // Booking cards
-            else
-              SliverPadding(
-                padding: AppSpacing.horizontalLg,
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => BookingCard(booking: filteredBookings[index]),
-                    childCount: filteredBookings.length,
-                  ),
-                ),
+                  const SavedContent(),
+                ],
               ),
-
-            // Explore more banner (only when not loading)
-            if (!bookingService.isLoading)
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: AppSpacing.paddingLg,
-                  padding: AppSpacing.paddingXl,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondary.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(
-                      color: theme.colorScheme.secondary.withValues(alpha: 0.19),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(Icons.explore_rounded, color: theme.colorScheme.tertiary, size: 40),
-                      const SizedBox(height: AppSpacing.md),
-                      Text(
-                        'Looking for more?',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Discover new hobbies tailored to your interests in the feed.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      ElevatedButton(
-                        onPressed: () => context.go(AppRoutes.feed),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.tertiary,
-                          foregroundColor: theme.colorScheme.onSurface,
-                          minimumSize: const Size(double.infinity, 48),
-                        ),
-                        child: const Text('Explore Activities'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UpcomingList extends StatelessWidget {
+  final List<BookingModel> bookings;
+  final bool isLoading;
+
+  const _UpcomingList({required this.bookings, required this.isLoading});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (isLoading) {
+      return ListView.builder(
+        itemCount: 3,
+        itemBuilder: (_, __) => Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: HobifiShimmer.listTile(),
+        ),
+      );
+    }
+
+    if (bookings.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          HobifiEmptyState(
+            icon: Icons.confirmation_number_outlined,
+            title: 'No bookings yet',
+            subtitle: 'Explore activities and book your first experience!',
+            actionLabel: 'Explore Activities',
+            onAction: () => context.go(AppRoutes.feed),
+          ),
+        ],
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        final authService = context.read<AuthService>();
+        final bookingService = context.read<BookingService>();
+        if (authService.currentUser != null) {
+          await bookingService.loadUserBookings(authService.currentUser!.id);
+        }
+      },
+      child: ListView(
+        padding: AppSpacing.horizontalLg,
+        children: [
+          ...bookings.map((b) => BookingCard(booking: b)),
+          // Explore more banner
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 16),
+            padding: AppSpacing.paddingXl,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(
+                color: theme.colorScheme.secondary.withValues(alpha: 0.19),
+              ),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.explore_rounded,
+                    color: theme.colorScheme.tertiary, size: 40),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Looking for more?',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Discover new hobbies tailored to your interests in the feed.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface
+                        .withValues(alpha: 0.6),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                ElevatedButton(
+                  onPressed: () => context.go(AppRoutes.feed),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.tertiary,
+                    foregroundColor: theme.colorScheme.onSurface,
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                  child: const Text('Explore Activities'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
