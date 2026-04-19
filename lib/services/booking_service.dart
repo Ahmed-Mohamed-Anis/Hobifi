@@ -252,6 +252,46 @@ class BookingService extends ChangeNotifier {
     }
   }
 
+  /// Mark a booking as attended (status -> completed). Provider-side action.
+  /// Used when a business checks in a customer at the activity.
+  Future<Map<String, dynamic>> markAttended(String bookingId) async {
+    try {
+      await SupabaseService.update(
+        'bookings',
+        {
+          'status': BookingStatus.completed.name,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        filters: {'id': bookingId},
+      );
+
+      // Update local business bookings cache if the booking is present.
+      final idx = _businessBookings.indexWhere((b) => b.id == bookingId);
+      if (idx >= 0) {
+        final b = _businessBookings[idx];
+        _businessBookings[idx] = BookingModel(
+          id: b.id,
+          userId: b.userId,
+          activityId: b.activityId,
+          activityTitle: b.activityTitle,
+          activityImage: b.activityImage,
+          location: b.location,
+          price: b.price,
+          dateTime: b.dateTime,
+          status: BookingStatus.completed,
+          createdAt: b.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      }
+      notifyListeners();
+
+      return {'success': true, 'message': 'Booking marked as attended'};
+    } catch (e) {
+      debugPrint('Failed to mark booking as attended: $e');
+      return {'success': false, 'message': 'Failed to mark attended: $e'};
+    }
+  }
+
   Future<void> deleteBooking(String id) async {
     try {
       await SupabaseService.delete(
