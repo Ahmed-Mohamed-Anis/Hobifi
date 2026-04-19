@@ -9,6 +9,7 @@ import 'package:hobby_haven/screens/user/saved_screen.dart';
 import 'package:hobby_haven/screens/user/booking_confirm_screen.dart';
 import 'package:hobby_haven/screens/user/payment_screen.dart';
 import 'package:hobby_haven/screens/user/ticket_screen.dart';
+import 'package:hobby_haven/screens/user/booking_history_screen.dart';
 import 'package:hobby_haven/screens/business/dashboard_screen.dart';
 import 'package:hobby_haven/screens/business/create_activity_screen.dart';
 import 'package:hobby_haven/screens/business/activity_manage_screen.dart';
@@ -243,6 +244,15 @@ class AppRouter {
             );
           },
         ),
+        GoRoute(
+          path: AppRoutes.profileHistory,
+          name: 'profile-history',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) => _buildSmoothTransition(
+            child: const BookingHistoryScreen(),
+            state: state,
+          ),
+        ),
       ],
     );
     return _router!;
@@ -413,4 +423,6 @@ class AppRoutes {
   static const String payment = '/payment';
   static const String ticket = '/ticket';
   static const String businessProfile = '/business-profile';
+  static const String profileHistory = '/profile/history';
+  static const String friends = '/friends';
 }
