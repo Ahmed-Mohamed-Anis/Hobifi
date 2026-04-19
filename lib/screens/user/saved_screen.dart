@@ -55,7 +55,6 @@ class _SavedContentState extends State<SavedContent> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
       final auth = context.read<AuthService>();
       final likeService = context.read<LikeService>();
       if (auth.currentUser != null) {
@@ -73,52 +72,56 @@ class _SavedContentState extends State<SavedContent> {
     final activities = likeService.likedActivities;
 
     if (likeService.isLoading) {
-      return Column(
-        children: List.generate(
-          3,
-          (_) => Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 20, vertical: 8),
-            child: HobifiShimmer.card(),
-          ),
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        itemCount: 3,
+        itemBuilder: (_, __) => Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: HobifiShimmer.card(),
         ),
-      );
-    }
-
-    if (activities.isEmpty) {
-      return HobifiEmptyState(
-        icon: Icons.favorite_outline_rounded,
-        title: 'No saved activities',
-        subtitle: 'Like activities to save them here',
-        actionLabel: 'Start Exploring',
-        onAction: () => context.go(AppRoutes.feed),
       );
     }
 
     return RefreshIndicator(
       onRefresh: () => likeService.loadLikedActivities(),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: activities.length,
-        itemBuilder: (context, index) {
-          final activity = activities[index];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: HobifiCard(
-              activity: activity,
-              isLiked: likeService.isLiked(activity.id),
-              onTap: () =>
-                  context.push('${AppRoutes.activity}/${activity.id}'),
-              onLikeTap: () {
-                final userId = auth.currentUser?.id;
-                if (userId != null) {
-                  likeService.toggleLike(userId, activity.id);
-                }
+      child: activities.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: HobifiEmptyState(
+                    icon: Icons.favorite_outline_rounded,
+                    title: 'No saved activities',
+                    subtitle: 'Like activities to save them here',
+                    actionLabel: 'Start Exploring',
+                    onAction: () => context.go(AppRoutes.feed),
+                  ),
+                ),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: activities.length,
+              itemBuilder: (context, index) {
+                final activity = activities[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: HobifiCard(
+                    activity: activity,
+                    isLiked: likeService.isLiked(activity.id),
+                    onTap: () =>
+                        context.push('${AppRoutes.activity}/${activity.id}'),
+                    onLikeTap: () {
+                      final userId = auth.currentUser?.id;
+                      if (userId != null) {
+                        likeService.toggleLike(userId, activity.id);
+                      }
+                    },
+                  ),
+                );
               },
             ),
-          );
-        },
-      ),
     );
   }
 }

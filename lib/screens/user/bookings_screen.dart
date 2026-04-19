@@ -164,29 +164,38 @@ class _UpcomingList extends StatelessWidget {
       );
     }
 
+    Future<void> refresh() async {
+      final authService = context.read<AuthService>();
+      final bookingService = context.read<BookingService>();
+      if (authService.currentUser != null) {
+        await bookingService.loadUserBookings(authService.currentUser!.id);
+      }
+    }
+
     if (bookings.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          HobifiEmptyState(
-            icon: Icons.confirmation_number_outlined,
-            title: 'No bookings yet',
-            subtitle: 'Explore activities and book your first experience!',
-            actionLabel: 'Explore Activities',
-            onAction: () => context.go(AppRoutes.feed),
-          ),
-        ],
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: HobifiEmptyState(
+                icon: Icons.confirmation_number_outlined,
+                title: 'No bookings yet',
+                subtitle:
+                    'Explore activities and book your first experience!',
+                actionLabel: 'Explore Activities',
+                onAction: () => context.go(AppRoutes.feed),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
     return RefreshIndicator(
-      onRefresh: () async {
-        final authService = context.read<AuthService>();
-        final bookingService = context.read<BookingService>();
-        if (authService.currentUser != null) {
-          await bookingService.loadUserBookings(authService.currentUser!.id);
-        }
-      },
+      onRefresh: refresh,
       child: ListView(
         padding: AppSpacing.horizontalLg,
         children: [
