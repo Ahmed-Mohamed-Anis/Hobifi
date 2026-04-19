@@ -5,7 +5,7 @@ import 'package:hobby_haven/screens/user/feed_screen.dart';
 import 'package:hobby_haven/screens/user/activity_details_screen.dart';
 import 'package:hobby_haven/screens/user/profile_screen.dart';
 import 'package:hobby_haven/screens/user/bookings_screen.dart';
-import 'package:hobby_haven/screens/user/saved_screen.dart';
+import 'package:hobby_haven/screens/user/friends_screen.dart';
 import 'package:hobby_haven/screens/user/booking_confirm_screen.dart';
 import 'package:hobby_haven/screens/user/payment_screen.dart';
 import 'package:hobby_haven/screens/user/ticket_screen.dart';
@@ -136,9 +136,9 @@ class AppRouter {
               pageBuilder: (context, state) => const NoTransitionPage(child: BookingsScreen()),
             ),
             GoRoute(
-              path: AppRoutes.saved,
-              name: 'saved',
-              pageBuilder: (context, state) => const NoTransitionPage(child: SavedScreen()),
+              path: AppRoutes.friends,
+              name: 'friends',
+              pageBuilder: (context, state) => const NoTransitionPage(child: FriendsScreen()),
             ),
             GoRoute(
               path: AppRoutes.profile,
@@ -267,7 +267,7 @@ class _UserShellScreen extends StatelessWidget {
   int _currentIndex(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     if (location.startsWith(AppRoutes.bookings)) return 1;
-    if (location.startsWith(AppRoutes.saved)) return 2;
+    if (location.startsWith(AppRoutes.friends)) return 2;
     if (location.startsWith(AppRoutes.profile)) return 3;
     return 0; // feed
   }
@@ -295,7 +295,7 @@ class _UserShellScreen extends StatelessWidget {
               case 1:
                 context.go(AppRoutes.bookings);
               case 2:
-                context.go(AppRoutes.saved);
+                context.go(AppRoutes.friends);
               case 3:
                 context.go(AppRoutes.profile);
             }
@@ -309,17 +309,17 @@ class _UserShellScreen extends StatelessWidget {
             NavigationDestination(
               icon: Icon(Icons.explore_outlined, color: idx == 0 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
               selectedIcon: Icon(Icons.explore_rounded, color: colorScheme.primary),
-              label: 'Browse',
+              label: 'Discover',
             ),
             NavigationDestination(
               icon: Icon(Icons.confirmation_number_outlined, color: idx == 1 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
               selectedIcon: Icon(Icons.confirmation_number_rounded, color: colorScheme.primary),
-              label: 'Tickets',
+              label: 'My Hobbies',
             ),
             NavigationDestination(
-              icon: Icon(Icons.favorite_outline_rounded, color: idx == 2 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
-              selectedIcon: Icon(Icons.favorite_rounded, color: colorScheme.primary),
-              label: 'Saved',
+              icon: Icon(Icons.people_outline_rounded, color: idx == 2 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
+              selectedIcon: Icon(Icons.people_rounded, color: colorScheme.primary),
+              label: 'Friends',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline_rounded, color: idx == 3 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
@@ -412,7 +412,6 @@ class AppRoutes {
   static const String onboarding = '/onboarding';
   static const String feed = '/feed';
   static const String bookings = '/bookings';
-  static const String saved = '/saved';
   static const String activity = '/activity';
   static const String businessActivity = '/business-activity';
   static const String profile = '/profile';

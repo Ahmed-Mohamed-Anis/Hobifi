@@ -4,45 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/like_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/nav.dart';
-import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/hobifi_card.dart';
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 
-class SavedScreen extends StatelessWidget {
-  const SavedScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: AppSpacing.paddingLg,
-              child: Text(
-                'Saved',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const Expanded(child: SavedContent()),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Reusable widget that renders the liked-activities list without any
-/// Scaffold or page-title header. Used as the body of [SavedScreen] and
-/// embedded as the "Liked" tab inside My Hobbies.
+/// Scaffold or page-title header. Embedded as the "Liked" tab inside the
+/// My Hobbies screen (see `bookings_screen.dart`).
 class SavedContent extends StatefulWidget {
   const SavedContent({super.key});
 
