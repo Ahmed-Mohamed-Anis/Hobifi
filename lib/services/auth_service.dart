@@ -339,6 +339,41 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Complete business onboarding: persists the business name + marks the
+  /// profile as onboarded. Category/city/description are collected in the UI
+  /// but not persisted yet (no columns on `public.users`).
+  Future<Map<String, dynamic>> completeBusinessOnboarding({
+    required String businessName,
+    required String category,
+    required String city,
+    String? description,
+  }) async {
+    try {
+      final uid = SupabaseConfig.auth.currentUser?.id ?? _currentUser?.id;
+      if (uid == null) {
+        return {'success': false, 'message': 'Not signed in'};
+      }
+
+      final updates = <String, dynamic>{
+        'name': businessName,
+        'business_onboarded': true,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      await SupabaseService.update(
+        'users',
+        updates,
+        filters: {'id': uid},
+      );
+
+      await _loadCurrentUser();
+      return {'success': true};
+    } catch (e) {
+      debugPrint('completeBusinessOnboarding failed: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   Future<String?> uploadAvatarBytes(Uint8List bytes, {String? fileExt}) async {
     try {
       final userId = SupabaseConfig.auth.currentUser?.id ?? _currentUser?.id;
