@@ -15,6 +15,7 @@ import 'package:hobby_haven/screens/business/create_activity_screen.dart';
 import 'package:hobby_haven/screens/business/activity_manage_screen.dart';
 import 'package:hobby_haven/screens/business/wallet_screen.dart';
 import 'package:hobby_haven/screens/business/business_profile_screen.dart';
+import 'package:hobby_haven/screens/business/business_onboarding_screen.dart';
 import 'package:hobby_haven/screens/onboarding_screen.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 
@@ -79,6 +80,10 @@ class AppRouter {
         if (isAuthenticated && isAuthRoute) {
           final user = authService.currentUser;
           if (user?.role.name == 'business') {
+            // Un-onboarded business → wizard; otherwise dashboard
+            if (user != null && !user.businessOnboarded) {
+              return AppRoutes.businessOnboarding;
+            }
             return AppRoutes.businessDashboard;
           }
           // New user with no interests → onboarding
@@ -91,7 +96,24 @@ class AppRouter {
         // Authenticated user navigating — check onboarding state
         if (isAuthenticated) {
           final user = authService.currentUser;
-          final isOnboarding = state.matchedLocation == AppRoutes.onboarding;
+          final loc = state.matchedLocation;
+          final isOnboarding = loc == AppRoutes.onboarding;
+          final isBusinessOnboarding = loc == AppRoutes.businessOnboarding;
+
+          // Business onboarding gate
+          if (user != null &&
+              user.role.name == 'business' &&
+              !user.businessOnboarded &&
+              !isBusinessOnboarding) {
+            return AppRoutes.businessOnboarding;
+          }
+          // Already-onboarded business visiting the wizard → dashboard
+          if (user != null &&
+              user.role.name == 'business' &&
+              user.businessOnboarded &&
+              isBusinessOnboarding) {
+            return AppRoutes.businessDashboard;
+          }
 
           // User role with no interests should go to onboarding
           if (user != null && user.role.name == 'user' && user.interests.isEmpty && !isOnboarding) {
@@ -118,6 +140,13 @@ class AppRouter {
           path: AppRoutes.onboarding,
           name: 'onboarding',
           pageBuilder: (context, state) => const NoTransitionPage(child: OnboardingScreen()),
+        ),
+
+        // ─── Business Onboarding (no shell) ───
+        GoRoute(
+          path: AppRoutes.businessOnboarding,
+          name: 'business-onboarding',
+          pageBuilder: (context, state) => const NoTransitionPage(child: BusinessOnboardingScreen()),
         ),
 
         // ─── User Shell with Bottom Nav ───
@@ -422,6 +451,7 @@ class AppRoutes {
   static const String payment = '/payment';
   static const String ticket = '/ticket';
   static const String businessProfile = '/business-profile';
+  static const String businessOnboarding = '/business-onboarding';
   static const String profileHistory = '/profile/history';
   static const String friends = '/friends';
 }
