@@ -53,6 +53,11 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
 
+  // Recurrence state
+  bool _repeats = false;
+  String _frequency = 'weekly'; // 'weekly' | 'biweekly' | 'monthly'
+  DateTime? _repeatUntil;
+
   Future<String> _uploadBytes(Uint8List bytes, String filename) async {
     final auth = context.read<AuthService>();
     final userId = auth.currentUser?.id ?? 'anonymous';
@@ -124,6 +129,23 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   Future<void> _pickEndTime() async {
     final picked = await showTimePicker(context: context, initialTime: _endTime);
     if (picked != null) setState(() => _endTime = picked);
+  }
+
+  List<DateTime> _occurrenceDates(DateTime start, String frequency, DateTime endInclusive) {
+    final dates = <DateTime>[];
+    var cursor = start;
+    while (!cursor.isAfter(endInclusive)) {
+      dates.add(cursor);
+      switch (frequency) {
+        case 'weekly':
+          cursor = cursor.add(const Duration(days: 7));
+        case 'biweekly':
+          cursor = cursor.add(const Duration(days: 14));
+        case 'monthly':
+          cursor = DateTime(cursor.year, cursor.month + 1, cursor.day, cursor.hour, cursor.minute);
+      }
+    }
+    return dates;
   }
 
   @override
@@ -216,42 +238,81 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     final now = DateTime.now();
 
     try {
-      final startAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
-      final endAt = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
-      final dur = endAt.difference(startAt);
+      final baseStart = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _startTime.hour, _startTime.minute);
+      final baseEnd = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _endTime.hour, _endTime.minute);
+      final dur = baseEnd.difference(baseStart);
       final hours = dur.inMinutes / 60.0;
       final durationLabel = hours % 1 == 0 ? '${hours.toInt()}h' : '${hours.toStringAsFixed(1)}h';
 
-      final activity = ActivityModel(
-        id: 'activity_${now.millisecondsSinceEpoch}',
-        businessId: authService.currentUser!.id,
-        title: InputSanitizer.sanitize(_titleController.text, maxLength: 100),
-        description: InputSanitizer.sanitize(_descriptionController.text, maxLength: 2000),
-        category: _selectedCategory,
-        price: double.tryParse(_priceController.text) ?? 0,
-        location: _locationController.text.trim(),
-        imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
-        imageUrls: List<String>.from(_imageUrls),
-        rating: 0.0,
-        reviewCount: 0,
-        duration: durationLabel,
-        maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
-        spotsLeft: int.tryParse(_maxGuestsController.text) ?? 10,
-        dateTime: startAt, // backwards compatible primary datetime
-        startAt: startAt,
-        endAt: endAt,
-        isInstantBooking: _isInstantBooking,
-        isPublic: _isPublic,
-        features: _selectedTags.toList(),
-        createdAt: now,
-        updatedAt: now,
-      );
-
-      await activityService.createActivity(activity);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activity created successfully!')));
-        context.go(AppRoutes.businessDashboard);
+      List<DateTime> dates;
+      if (_repeats) {
+        if (_repeatUntil == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please pick an end date for the repeating activity.')),
+          );
+          return;
+        }
+        // Use end-of-day for the until date so same-day comparisons work.
+        final endInclusive = DateTime(_repeatUntil!.year, _repeatUntil!.month, _repeatUntil!.day, 23, 59, 59);
+        dates = _occurrenceDates(baseStart, _frequency, endInclusive);
+        if (dates.length > 26) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please pick an earlier end date — max 26 sessions.')),
+          );
+          return;
+        }
+        if (dates.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('The end date must be on or after the start date.')),
+          );
+          return;
+        }
+      } else {
+        dates = [baseStart];
       }
+
+      int created = 0;
+      for (final dt in dates) {
+        final occurrenceStart = dt;
+        final occurrenceEnd = dt.add(dur);
+        final activity = ActivityModel(
+          id: 'activity_${now.millisecondsSinceEpoch}_$created',
+          businessId: authService.currentUser!.id,
+          title: InputSanitizer.sanitize(_titleController.text, maxLength: 100),
+          description: InputSanitizer.sanitize(_descriptionController.text, maxLength: 2000),
+          category: _selectedCategory,
+          price: double.tryParse(_priceController.text) ?? 0,
+          location: _locationController.text.trim(),
+          imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
+          imageUrls: List<String>.from(_imageUrls),
+          rating: 0.0,
+          reviewCount: 0,
+          duration: durationLabel,
+          maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
+          spotsLeft: int.tryParse(_maxGuestsController.text) ?? 10,
+          dateTime: occurrenceStart, // backwards compatible primary datetime
+          startAt: occurrenceStart,
+          endAt: occurrenceEnd,
+          isInstantBooking: _isInstantBooking,
+          isPublic: _isPublic,
+          features: _selectedTags.toList(),
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        try {
+          await activityService.createActivity(activity);
+          created++;
+        } catch (e) {
+          debugPrint('Create activity (occurrence) error: $e');
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Created $created session${created == 1 ? '' : 's'}.')),
+      );
+      context.go(AppRoutes.businessDashboard);
     } catch (e) {
       debugPrint('Create activity error: $e');
       if (mounted) {
@@ -489,6 +550,45 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: AppSpacing.md),
+                    // Recurrence section
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('This activity repeats'),
+                      value: _repeats,
+                      onChanged: (v) => setState(() => _repeats = v),
+                    ),
+                    if (_repeats) ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: _frequency,
+                        decoration: const InputDecoration(labelText: 'Frequency'),
+                        items: const [
+                          DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                          DropdownMenuItem(value: 'biweekly', child: Text('Every 2 weeks')),
+                          DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+                        ],
+                        onChanged: (v) => setState(() => _frequency = v ?? 'weekly'),
+                      ),
+                      const SizedBox(height: 12),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.event_rounded),
+                        title: const Text('End date'),
+                        subtitle: Text(_repeatUntil == null
+                            ? 'Select'
+                            : _repeatUntil!.toLocal().toString().split(' ').first),
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now().add(const Duration(days: 30)),
+                            firstDate: DateTime.now().add(const Duration(days: 1)),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) setState(() => _repeatUntil = picked);
+                        },
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.lg),
                     Container(
                       padding: AppSpacing.paddingLg,
