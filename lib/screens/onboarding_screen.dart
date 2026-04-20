@@ -222,6 +222,20 @@ class _InterestsPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Text(
             'What are you into?',
             style: theme.textTheme.headlineMedium?.copyWith(
@@ -231,7 +245,7 @@ class _InterestsPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Pick at least 3 interests so we can personalize your feed.',
+            'Let\'s find what moves you — pick a few interests to personalize your feed.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),

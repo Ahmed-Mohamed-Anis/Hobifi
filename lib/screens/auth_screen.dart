@@ -211,6 +211,30 @@ class _AuthScreenState extends State<AuthScreen> {
               // Logo block
               _buildLogoBlock(theme, colorScheme),
 
+              // Benefit strip (sign up only)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _isSignUp
+                    ? Column(
+                        key: const ValueKey('benefits'),
+                        children: [
+                          const SizedBox(height: 8),
+                          Text(
+                            _isUser ? 'Discover local hobbies' : 'Host your passion',
+                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isUser ? 'Book and meet real people' : 'Get paid in EGP',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ],
+                      )
+                    : const SizedBox.shrink(key: ValueKey('nobenefits')),
+              ),
+
               const SizedBox(height: 16),
 
               // Sign In / Sign Up mode toggle (NEW)
