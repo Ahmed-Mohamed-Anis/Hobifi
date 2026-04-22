@@ -49,3 +49,6 @@ app.*.map.json
 
 # Supabase local temp
 supabase/.temp/
+
+# Git worktrees
+.worktrees/
