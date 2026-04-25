@@ -14,6 +14,7 @@ class HobifiCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLikeTap;
   final bool featured;
+  final String? distanceLabel;
 
   const HobifiCard({
     super.key,
@@ -22,6 +23,7 @@ class HobifiCard extends StatelessWidget {
     required this.onTap,
     required this.onLikeTap,
     this.featured = false,
+    this.distanceLabel,
   });
 
   /// Featured variant — compact card for horizontal scroll sections.
@@ -31,6 +33,7 @@ class HobifiCard extends StatelessWidget {
     required this.isLiked,
     required this.onTap,
     required this.onLikeTap,
+    this.distanceLabel,
   }) : featured = true;
 
   @override
@@ -91,6 +94,34 @@ class HobifiCard extends StatelessWidget {
               left: 12,
               child: _PriceBadge(price: activity.price, colorScheme: cs),
             ),
+
+            if (distanceLabel != null)
+              Positioned(
+                bottom: 70,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(9999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on_rounded, color: Colors.white, size: 12),
+                      const SizedBox(width: 3),
+                      Text(
+                        distanceLabel!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // Title + rating — very bottom
             Positioned(
@@ -204,6 +235,34 @@ class HobifiCard extends StatelessWidget {
                     left: 10,
                     child: _PriceBadge(price: activity.price, colorScheme: cs),
                   ),
+
+                  if (distanceLabel != null)
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on_rounded, color: Colors.white, size: 12),
+                            const SizedBox(width: 3),
+                            Text(
+                              distanceLabel!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
