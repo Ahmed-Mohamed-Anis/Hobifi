@@ -56,5 +56,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Hobifi uses your location to show activities near you.</string>
 </dict>
 </plist>
