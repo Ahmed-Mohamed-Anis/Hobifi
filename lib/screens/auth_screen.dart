@@ -173,6 +173,7 @@ class _AuthScreenState extends State<AuthScreen> {
               Navigator.of(context).pop();
               setState(() {
                 _isSignUp = false;
+                _obscurePassword = true;
                 _emailController.clear();
                 _passwordController.clear();
                 _nameController.clear();
@@ -251,9 +252,8 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             child: Text(
                               _isUser ? 'Sign up as a Host →' : 'Sign up as an Explorer →',
-                              style: TextStyle(
-                                color: _isUser ? AppColors.lime : AppColors.orange,
-                                fontSize: 13,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.lime,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -287,8 +287,16 @@ class _AuthScreenState extends State<AuthScreen> {
                         color: colorScheme.onSurface.withValues(alpha: 0.55),
                       ),
                     ),
-                    GestureDetector(
-                      onTap: () => setState(() => _isSignUp = !_isSignUp),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _isSignUp = !_isSignUp;
+                        _obscurePassword = true;
+                      }),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: Text(
                         _isSignUp ? 'Sign in' : 'Sign up',
                         style: theme.textTheme.bodySmall?.copyWith(
