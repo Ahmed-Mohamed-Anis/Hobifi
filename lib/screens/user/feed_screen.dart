@@ -523,7 +523,7 @@ class _MinimalHeader extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/images/hobifi_logo.png',
-                height: 35,
+                height: 44,
                 fit: BoxFit.contain,
               ),
               const SizedBox(height: 4),
@@ -543,7 +543,7 @@ class _MinimalHeader extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: colorScheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
+                shape: BoxShape.circle,
                 image: avatarUrl != null && avatarUrl!.startsWith('http')
                     ? DecorationImage(
                         image: NetworkImage(avatarUrl!),
