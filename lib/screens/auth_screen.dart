@@ -275,6 +275,32 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 8),
 
+              // Mode switch link
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isSignUp ? 'Already have an account? ' : "Don't have an account? ",
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _isSignUp = !_isSignUp),
+                      child: Text(
+                        _isSignUp ? 'Sign in' : 'Sign up',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: accentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               // Terms
               Padding(
                 padding: const EdgeInsets.only(bottom: 8, top: 2),
