@@ -13,6 +13,7 @@ import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/services/wallet_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
+import 'package:hobby_haven/services/location_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +73,7 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => ThemeService()..initialize()),
         ChangeNotifierProvider(create: (_) => AuthService()..initialize()),
         ChangeNotifierProvider(create: (_) => ActivityService()..initialize()),
+        ChangeNotifierProvider(create: (_) => LocationService()..loadSavedLocation()),
         ChangeNotifierProxyProvider<AuthService, BookingService>(
           create: (_) => BookingService(),
           update: (context, auth, bookingService) {
