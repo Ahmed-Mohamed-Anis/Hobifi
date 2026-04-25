@@ -212,30 +212,6 @@ class _AuthScreenState extends State<AuthScreen> {
               // Logo block
               _buildLogoBlock(theme, colorScheme),
 
-              // Benefit strip (sign up only)
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: _isSignUp
-                    ? Column(
-                        key: const ValueKey('benefits'),
-                        children: [
-                          const SizedBox(height: 8),
-                          Text(
-                            _isUser ? 'Discover local hobbies' : 'Host your passion',
-                            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isUser ? 'Book and meet real people' : 'Get paid in EGP',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ],
-                      )
-                    : const SizedBox.shrink(key: ValueKey('nobenefits')),
-              ),
-
               const SizedBox(height: 16),
 
               // Role toggle
@@ -284,6 +260,16 @@ class _AuthScreenState extends State<AuthScreen> {
   }
   
   Widget _buildLogoBlock(ThemeData theme, ColorScheme colorScheme) {
+    final String headline;
+    final String subtext;
+    if (_isSignUp) {
+      headline = _isUser ? 'Discover local hobbies' : 'Host your passion';
+      subtext = _isUser ? 'Book and meet real people' : 'Get paid in EGP';
+    } else {
+      headline = 'Welcome back';
+      subtext = 'Sign in to continue';
+    }
+
     return Column(
       children: [
         Image.asset(
@@ -292,10 +278,28 @@ class _AuthScreenState extends State<AuthScreen> {
           fit: BoxFit.contain,
         ),
         const SizedBox(height: 12),
-        Text(
-          _isSignUp ? 'Begin Your Journey' : 'Discover What Moves You',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurface.withValues(alpha: 0.5),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            headline,
+            key: ValueKey(headline),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.onSurface,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 4),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            subtext,
+            key: ValueKey(subtext),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.55),
+            ),
+            textAlign: TextAlign.center,
           ),
         ),
       ],
