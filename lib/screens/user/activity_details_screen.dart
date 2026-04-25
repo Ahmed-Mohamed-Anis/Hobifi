@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hobby_haven/models/activity_model.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
@@ -53,6 +56,15 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openDirections(double lat, double lng) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -252,6 +264,62 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
                             label: activity.category),
                       ],
                     ),
+
+                    // Map section (only when coordinates available)
+                    if (activity.latitude != null) ...[
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 200,
+                          child: FlutterMap(
+                            options: MapOptions(
+                              initialCenter: LatLng(activity.latitude!, activity.longitude!),
+                              initialZoom: 15,
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.none,
+                              ),
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.hobifi.app',
+                              ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(activity.latitude!, activity.longitude!),
+                                    child: const Icon(
+                                      Icons.location_pin,
+                                      color: Colors.red,
+                                      size: 40,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openDirections(
+                            activity.latitude!,
+                            activity.longitude!,
+                          ),
+                          icon: const Icon(Icons.directions_rounded),
+                          label: const Text('Get Directions'),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
 
                     // 3. Description
                     const SizedBox(height: 16),
