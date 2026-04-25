@@ -15,6 +15,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _isUser = true;
   bool _isSignUp = true;
+  bool _obscurePassword = true;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
@@ -409,7 +410,8 @@ class _AuthScreenState extends State<AuthScreen> {
             label: 'Password',
             hint: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
             icon: Icons.lock_outline_rounded,
-            obscure: true,
+            obscure: _obscurePassword,
+            onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
           ),
 
           if (!_isSignUp) ...[
@@ -559,6 +561,7 @@ class _AuthScreenState extends State<AuthScreen> {
     required IconData icon,
     bool obscure = false,
     TextInputType? keyboardType,
+    VoidCallback? onToggleObscure,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final accentColor = _isUser ? AppColors.orange : AppColors.lime;
@@ -592,8 +595,15 @@ class _AuthScreenState extends State<AuthScreen> {
               fontSize: 15,
             ),
             prefixIcon: Icon(icon, color: colorScheme.onSurface.withValues(alpha: 0.5), size: 20),
-            suffixIcon: obscure
-                ? Icon(Icons.visibility_off_rounded, color: colorScheme.onSurface.withValues(alpha: 0.4), size: 20)
+            suffixIcon: onToggleObscure != null
+                ? IconButton(
+                    icon: Icon(
+                      obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                      color: colorScheme.onSurface.withValues(alpha: 0.4),
+                      size: 20,
+                    ),
+                    onPressed: onToggleObscure,
+                  )
                 : null,
             filled: true,
             fillColor: colorScheme.surfaceContainerLowest,
