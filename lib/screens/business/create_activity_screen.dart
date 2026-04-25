@@ -13,6 +13,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
 import 'package:hobby_haven/screens/business/activity_preview_screen.dart';
 import 'package:hobby_haven/utils/input_sanitizer.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:hobby_haven/widgets/location_picker.dart';
 
 class CreateActivityScreen extends StatefulWidget {
   const CreateActivityScreen({super.key});
@@ -25,6 +27,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
+  double? _activityLat;
+  double? _activityLng;
   final _priceController = TextEditingController();
   final _maxGuestsController = TextEditingController();
   String _selectedCategory = 'Art';
@@ -131,6 +135,25 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     if (picked != null) setState(() => _endTime = picked);
   }
 
+  Future<void> _pickLocation() async {
+    final result = await Navigator.of(context).push<LocationResult>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerWidget(
+          initialLocation: _activityLat != null
+              ? LatLng(_activityLat!, _activityLng!)
+              : null,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _locationController.text = result.displayAddress;
+        _activityLat = result.latitude;
+        _activityLng = result.longitude;
+      });
+    }
+  }
+
   List<DateTime> _occurrenceDates(DateTime start, String frequency, DateTime endInclusive) {
     final dates = <DateTime>[];
     var cursor = start;
@@ -210,6 +233,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       isInstantBooking: _isInstantBooking,
       isPublic: _isPublic,
       features: _selectedTags.toList(),
+      latitude: _activityLat,
+      longitude: _activityLng,
       createdAt: now,
       updatedAt: now,
     );
@@ -296,6 +321,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           isInstantBooking: _isInstantBooking,
           isPublic: _isPublic,
           features: _selectedTags.toList(),
+          latitude: _activityLat,
+          longitude: _activityLng,
           createdAt: now,
           updatedAt: now,
         );
@@ -454,11 +481,40 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     FormLabel(label: 'Location'),
-                    TextField(
-                      controller: _locationController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter street address or venue name',
-                        prefixIcon: Icon(Icons.location_on_rounded),
+                    GestureDetector(
+                      onTap: _pickLocation,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                          borderRadius: BorderRadius.circular(14),
+                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.location_on_rounded,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                                size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _locationController,
+                                builder: (_, value, __) => Text(
+                                  value.text.isEmpty ? 'Tap to set location on map' : value.text,
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: value.text.isEmpty
+                                        ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)
+                                        : Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.chevron_right_rounded,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
