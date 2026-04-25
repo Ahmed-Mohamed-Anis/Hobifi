@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,7 +11,7 @@ class LocationService extends ChangeNotifier {
 
   LatLng? savedLocation;
 
-  void loadSavedLocation() async {
+  Future<void> loadSavedLocation() async {
     final prefs = await SharedPreferences.getInstance();
     final lat = prefs.getDouble(_keyLat);
     final lng = prefs.getDouble(_keyLng);
@@ -46,6 +48,10 @@ class LocationService extends ChangeNotifier {
       savedLocation = latLng;
       notifyListeners();
       return latLng;
+    } on TimeoutException {
+      return null;
+    } on LocationServiceDisabledException {
+      return null;
     } catch (_) {
       return null;
     }
