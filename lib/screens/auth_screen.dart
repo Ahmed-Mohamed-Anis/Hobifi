@@ -237,11 +237,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 16),
 
-              // Sign In / Sign Up mode toggle (NEW)
-              _buildModeToggle(colorScheme),
-
-              const SizedBox(height: 12),
-
               // Role toggle
               _buildRoleToggle(colorScheme),
 
@@ -355,64 +350,6 @@ class _AuthScreenState extends State<AuthScreen> {
           label,
           style: TextStyle(
             color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface.withValues(alpha: 0.5),
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeToggle(ColorScheme colorScheme) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(9999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildModeTab(
-              label: 'Sign In',
-              isSelected: !_isSignUp,
-              colorScheme: colorScheme,
-              onTap: () => setState(() => _isSignUp = false),
-            ),
-            _buildModeTab(
-              label: 'Sign Up',
-              isSelected: _isSignUp,
-              colorScheme: colorScheme,
-              onTap: () => setState(() => _isSignUp = true),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeTab({
-    required String label,
-    required bool isSelected,
-    required ColorScheme colorScheme,
-    required VoidCallback onTap,
-  }) {
-    final accentColor = _isUser ? AppColors.orange : AppColors.lime;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(9999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? accentColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(9999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.55),
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             fontSize: 14,
           ),
