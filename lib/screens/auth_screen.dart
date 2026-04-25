@@ -214,10 +214,19 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 16),
 
-              // Role toggle
-              _buildRoleToggle(colorScheme),
-
-              const SizedBox(height: 12),
+              // Role toggle — sign-in only
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: !_isSignUp
+                    ? Column(
+                        children: [
+                          _buildRoleToggle(colorScheme),
+                          const SizedBox(height: 12),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
               // Form card (only this part scrolls on very small screens)
               Expanded(
@@ -225,6 +234,33 @@ class _AuthScreenState extends State<AuthScreen> {
                   physics: const BouncingScrollPhysics(),
                   child: _buildFormCard(theme, colorScheme, authService, accentColor),
                 ),
+              ),
+
+              // Host / Explorer switch link — sign-up only
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _isSignUp
+                    ? Padding(
+                        key: const ValueKey('role-link'),
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Center(
+                          child: TextButton(
+                            onPressed: () => setState(() => _isUser = !_isUser),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            child: Text(
+                              _isUser ? 'Sign up as a Host →' : 'Sign up as an Explorer →',
+                              style: TextStyle(
+                                color: _isUser ? AppColors.lime : AppColors.orange,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('no-role-link')),
               ),
 
               const SizedBox(height: 12),
