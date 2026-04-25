@@ -447,7 +447,7 @@ class _CityPageState extends State<_CityPage> {
                   TextButton(
                     onPressed: () => setState(() => _locationDetected = false),
                     style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
