@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
-import 'package:hobby_haven/theme.dart';
 
 typedef LocationResult = ({double latitude, double longitude, String displayAddress});
 
@@ -25,6 +24,8 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   List<_NominatimResult> _searchResults = [];
   bool _isSearching = false;
   bool _isConfirming = false;
+  int _searchGeneration = 0;
+  bool _hasSearched = false;
 
   @override
   void initState() {
@@ -44,7 +45,11 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   void _onSearchChanged(String query) {
     _debounce?.cancel();
     if (query.trim().isEmpty) {
-      setState(() => _searchResults = []);
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+        _hasSearched = false;
+      });
       return;
     }
     setState(() => _isSearching = true);
@@ -52,23 +57,25 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   }
 
   Future<void> _search(String query) async {
+    final generation = ++_searchGeneration;
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&limit=5&countrycodes=eg',
       );
       final response = await http.get(uri, headers: {'User-Agent': 'com.hobifi.app'});
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List<dynamic>;
         setState(() {
           _searchResults = data.map((e) => _NominatimResult.fromJson(e as Map<String, dynamic>)).toList();
           _isSearching = false;
+          _hasSearched = true;
         });
       } else {
         setState(() => _isSearching = false);
       }
     } catch (_) {
-      if (mounted) setState(() => _isSearching = false);
+      if (mounted && generation == _searchGeneration) setState(() => _isSearching = false);
     }
   }
 
@@ -144,12 +151,12 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
               decoration: InputDecoration(
                 hintText: 'Search address...',
                 prefixIcon: _isSearching
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
+                    ? Padding(
+                        padding: const EdgeInsets.all(12),
                         child: SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
                         ),
                       )
                     : const Icon(Icons.search_rounded),
@@ -158,7 +165,11 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                         icon: const Icon(Icons.clear_rounded),
                         onPressed: () {
                           _searchController.clear();
-                          setState(() => _searchResults = []);
+                          setState(() {
+                            _searchResults = [];
+                            _isSearching = false;
+                            _hasSearched = false;
+                          });
                         },
                       )
                     : null,
@@ -175,7 +186,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           ),
 
           // Search results dropdown
-          if (_searchResults.isNotEmpty)
+          if (_searchResults.isNotEmpty || (_hasSearched && _searchResults.isEmpty && _searchController.text.isNotEmpty && !_isSearching))
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
@@ -184,21 +195,27 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                 border: Border.all(color: colorScheme.outlineVariant),
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)],
               ),
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                itemCount: _searchResults.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: colorScheme.outlineVariant),
-                itemBuilder: (context, i) {
-                  final result = _searchResults[i];
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(Icons.location_on_rounded, color: colorScheme.primary, size: 18),
-                    title: Text(result.displayName, maxLines: 2, overflow: TextOverflow.ellipsis),
-                    onTap: () => _selectResult(result),
-                  );
-                },
-              ),
+              child: _searchResults.isEmpty
+                  ? const ListTile(
+                      dense: true,
+                      leading: Icon(Icons.search_off_rounded, size: 18),
+                      title: Text('No results found'),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _searchResults.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: colorScheme.outlineVariant),
+                      itemBuilder: (context, i) {
+                        final result = _searchResults[i];
+                        return ListTile(
+                          dense: true,
+                          leading: Icon(Icons.location_on_rounded, color: colorScheme.primary, size: 18),
+                          title: Text(result.displayName, maxLines: 2, overflow: TextOverflow.ellipsis),
+                          onTap: () => _selectResult(result),
+                        );
+                      },
+                    ),
             ),
 
           const SizedBox(height: 8),
@@ -227,12 +244,11 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                 ),
                 // Fixed crosshair pin
                 Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.location_pin, color: AppColors.orange, size: 48),
-                      const SizedBox(height: 24), // offset so pin tip is at center
-                    ],
+                  child: IgnorePointer(
+                    child: Transform.translate(
+                      offset: const Offset(0, -24),
+                      child: Icon(Icons.location_pin, color: colorScheme.secondary, size: 48),
+                    ),
                   ),
                 ),
               ],
