@@ -14,9 +14,9 @@ serve(async (req: Request) => {
   }
 
   try {
-    const PAYMOB_API_KEY = Deno.env.get("PAYMOB_API_KEY");
+    const PAYMOB_API_KEY = Deno.env.get("PAYMOB_SECRET_KEY");
     const PAYMOB_IFRAME_ID = Deno.env.get("PAYMOB_IFRAME_ID");
-    const PAYMOB_INTEGRATION_ID = Deno.env.get("PAYMOB_INTEGRATION_ID");
+    const PAYMOB_INTEGRATION_ID = Deno.env.get("PAYMOB_CARD_INTEGRATION_ID");
     // Wallet integration ID — add this secret when received from Paymob dashboard
     const PAYMOB_WALLET_INTEGRATION_ID = Deno.env.get("PAYMOB_WALLET_INTEGRATION_ID");
 
