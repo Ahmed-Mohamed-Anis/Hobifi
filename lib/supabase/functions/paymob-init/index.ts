@@ -121,16 +121,15 @@ serve(async (req: Request) => {
     const orderData = await orderResponse.json();
     let orderId = orderData.id;
 
-    // Paymob rejects duplicate merchant_order_id — reuse the existing order from our DB
+    // Paymob rejects duplicate merchant_order_id — fetch the existing order directly from Paymob
     if (!orderId && orderData.message === "duplicate") {
-      const { data: existingPayment } = await supabase
-        .from("payments")
-        .select("transaction_id")
-        .eq("booking_id", booking_id)
-        .not("transaction_id", "is", null)
-        .maybeSingle();
-      if (existingPayment?.transaction_id) {
-        orderId = parseInt(existingPayment.transaction_id);
+      const searchResponse = await fetch(
+        `https://accept.paymob.com/api/ecommerce/orders?merchant_order_id=${booking_id}&auth_token=${authToken}`,
+        { method: "GET", headers: { "Content-Type": "application/json" } }
+      );
+      const searchData = await searchResponse.json();
+      if (searchData.results && searchData.results.length > 0) {
+        orderId = searchData.results[0].id;
       }
     }
 
