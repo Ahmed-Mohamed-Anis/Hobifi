@@ -119,7 +119,21 @@ serve(async (req: Request) => {
       }),
     });
     const orderData = await orderResponse.json();
-    const orderId = orderData.id;
+    let orderId = orderData.id;
+
+    // Paymob rejects duplicate merchant_order_id — reuse the existing order from our DB
+    if (!orderId && orderData.message === "duplicate") {
+      const { data: existingPayment } = await supabase
+        .from("payments")
+        .select("transaction_id")
+        .eq("booking_id", booking_id)
+        .not("transaction_id", "is", null)
+        .maybeSingle();
+      if (existingPayment?.transaction_id) {
+        orderId = parseInt(existingPayment.transaction_id);
+      }
+    }
+
     if (!orderId) throw new Error(`Order registration failed: ${JSON.stringify(orderData)}`);
 
     // ── Step 3: Payment Key ─────────────────────────────────────────────────
