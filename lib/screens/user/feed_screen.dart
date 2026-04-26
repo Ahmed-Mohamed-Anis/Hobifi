@@ -11,6 +11,9 @@ import 'package:hobby_haven/services/like_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:hobby_haven/services/location_service.dart';
+import 'package:hobby_haven/utils/distance_util.dart';
 import 'package:hobby_haven/widgets/hobifi_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
@@ -201,6 +204,14 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
+  String? _distanceLabel(ActivityModel activity, LatLng? userLocation) {
+    if (userLocation == null || activity.latitude == null) return null;
+    return DistanceUtil.formatDistance(
+      userLocation,
+      LatLng(activity.latitude!, activity.longitude!),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -352,6 +363,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final auth = context.watch<AuthService>();
     final likeService = context.watch<LikeService>();
+    final userLocation = context.watch<LocationService>().savedLocation;
 
     return SliverToBoxAdapter(
       child: Column(
@@ -382,6 +394,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       final userId = auth.currentUser?.id;
                       if (userId != null) likeService.toggleLike(userId, activity.id);
                     },
+                    distanceLabel: _distanceLabel(activity, userLocation),
                   ),
                 );
               },
@@ -407,6 +420,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     final userId = auth.currentUser?.id;
                     if (userId != null) likeService.toggleLike(userId, activity.id);
                   },
+                  distanceLabel: _distanceLabel(activity, userLocation),
                 ),
               )).toList(),
             ),
@@ -439,6 +453,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         final userId = auth.currentUser?.id;
                         if (userId != null) likeService.toggleLike(userId, activity.id);
                       },
+                      distanceLabel: _distanceLabel(activity, userLocation),
                     ),
                   );
                 },
@@ -453,6 +468,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildSearchResults(List<ActivityModel> activities, ThemeData theme) {
     final auth = context.watch<AuthService>();
     final likeService = context.watch<LikeService>();
+    final userLocation = context.watch<LocationService>().savedLocation;
 
     if (activities.isEmpty) {
       return SliverToBoxAdapter(
@@ -485,6 +501,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   final userId = auth.currentUser?.id;
                   if (userId != null) likeService.toggleLike(userId, activity.id);
                 },
+                distanceLabel: _distanceLabel(activity, userLocation),
               ),
             );
           },
