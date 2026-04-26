@@ -2,18 +2,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
-import 'package:hobby_haven/widgets/hobifi_shimmer.dart'; // available for skeleton states
-import 'package:url_launcher/url_launcher.dart';
+import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 
 class PaymentScreen extends StatefulWidget {
   final String bookingId;
   final String activityId;
-  final String paymentUrl; // pre-fetched card iframe URL
+  final String paymentUrl;
   final String activityTitle;
   final double amount;
 
@@ -30,8 +30,7 @@ class PaymentScreen extends StatefulWidget {
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen>
-    with WidgetsBindingObserver {
+class _PaymentScreenState extends State<PaymentScreen> {
   bool _isLoading = false;
   bool _paymentCompleted = false;
   bool _paymentFailed = false;
@@ -40,34 +39,17 @@ class _PaymentScreenState extends State<PaymentScreen>
   Timer? _pollTimer;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     super.dispose();
   }
 
-  // When user returns to app (from browser or wallet app), start polling
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        !_paymentCompleted &&
-        !_paymentFailed) {
-      _startPolling();
-    }
-  }
-
   void _startPolling() {
-    if (_pollTimer != null) return; // already polling
+    if (_pollTimer != null) return;
     setState(() => _isChecking = true);
 
     int attempts = 0;
-    const maxAttempts = 20; // 20 * 3s = 60s
+    const maxAttempts = 20;
 
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       attempts++;
@@ -87,7 +69,6 @@ class _PaymentScreenState extends State<PaymentScreen>
           _paymentCompleted = true;
           _isChecking = false;
         });
-        // Reload all bookings in background so bookings list is fresh
         final userId = context.read<AuthService>().currentUser?.id ?? '';
         bookingService.loadUserBookings(userId, force: true);
         Future.delayed(const Duration(seconds: 2), () {
@@ -104,9 +85,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       } else if (attempts >= maxAttempts) {
         timer.cancel();
         _pollTimer = null;
-        setState(() {
-          _isChecking = false;
-        });
+        setState(() => _isChecking = false);
         if (mounted) _showTimeoutDialog();
       }
     });
@@ -149,34 +128,117 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 
-  // ── CARD FLOW ──────────────────────────────────────────────────────────────
-  Future<void> _payWithCard() async {
+  Future<void> _openPaymentSheet() async {
     if (widget.paymentUrl.isEmpty) {
       setState(() => _errorMessage = 'Payment URL not available. Please try again.');
       return;
     }
+
     setState(() => _isLoading = true);
-    try {
-      final url = Uri.parse(widget.paymentUrl);
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        setState(() => _errorMessage = 'Could not open payment page.');
-      }
-    } catch (e) {
-      setState(() => _errorMessage = 'Failed to open payment: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onNavigationRequest: (request) {
+            final url = request.url.toLowerCase();
+            // Paymob redirects to a URL containing success/failure info
+            if (url.contains('success=true') ||
+                url.contains('is_voided=false') && url.contains('pending=false')) {
+              Navigator.of(context).pop(); // close sheet
+              _startPolling();
+              return NavigationDecision.prevent;
+            }
+            if (url.contains('success=false') ||
+                url.contains('error') && url.contains('paymob')) {
+              Navigator.of(context).pop();
+              setState(() {
+                _paymentFailed = true;
+                _errorMessage = 'Payment was declined. Please try again.';
+              });
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.paymentUrl));
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.92,
+        child: Column(
+          children: [
+            // Handle bar + header
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    offset: const Offset(0, 2),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const Icon(Icons.lock_rounded, size: 16, color: Colors.green),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Secure Payment · Paymob',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: WebViewWidget(controller: controller)),
+          ],
+        ),
+      ),
+    );
+
+    // Sheet was closed — if payment not yet detected, start polling
+    if (mounted && !_paymentCompleted && !_paymentFailed) {
+      _startPolling();
     }
   }
 
-  // ── BUILD ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // Success state
     if (_paymentCompleted) {
       return Scaffold(
         body: SafeArea(
@@ -190,39 +252,30 @@ class _PaymentScreenState extends State<PaymentScreen>
                     color: AppColors.lightSuccess.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.check_circle_rounded,
-                    color: AppColors.lightSuccess,
-                    size: 80,
-                  ),
+                  child: const Icon(Icons.check_circle_rounded,
+                      color: AppColors.lightSuccess, size: 80),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                Text(
-                  'Payment Successful!',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text('Payment Successful!',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    )),
                 const SizedBox(height: AppSpacing.md),
-                Text(
-                  'Your ticket is ready',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
-                ),
+                Text('Your ticket is ready',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    )),
                 const SizedBox(height: AppSpacing.xl),
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     CircularProgressIndicator(color: colorScheme.primary),
                     const SizedBox(height: 16),
-                    Text(
-                      'Verifying payment...',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
+                    Text('Verifying payment...',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        )),
                   ],
                 ),
               ],
@@ -232,7 +285,6 @@ class _PaymentScreenState extends State<PaymentScreen>
       );
     }
 
-    // Failure state
     if (_paymentFailed) {
       return Scaffold(
         body: SafeArea(
@@ -248,20 +300,15 @@ class _PaymentScreenState extends State<PaymentScreen>
                       color: AppColors.lightError.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.error_outline_rounded,
-                      color: AppColors.lightError,
-                      size: 80,
-                    ),
+                    child: const Icon(Icons.error_outline_rounded,
+                        color: AppColors.lightError, size: 80),
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  Text(
-                    'Payment Failed',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text('Payment Failed',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.bold,
+                      )),
                   const SizedBox(height: AppSpacing.md),
                   Text(
                     _errorMessage ?? 'Something went wrong. Please try again.',
@@ -302,13 +349,11 @@ class _PaymentScreenState extends State<PaymentScreen>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Payment',
-              style: theme.textTheme.titleLarge?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text('Payment',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                )),
             if (widget.activityTitle.isNotEmpty)
               Text(
                 widget.activityTitle,
@@ -322,210 +367,178 @@ class _PaymentScreenState extends State<PaymentScreen>
         ),
       ),
       body: Column(
-          children: [
-            // Error banner
-            if (_errorMessage != null)
-              Container(
-                width: double.infinity,
-                padding: AppSpacing.paddingMd,
-                color: AppColors.lightError.withValues(alpha: 0.1),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline,
-                        color: AppColors.lightError),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
+        children: [
+          if (_errorMessage != null)
+            Container(
+              width: double.infinity,
+              padding: AppSpacing.paddingMd,
+              color: AppColors.lightError.withValues(alpha: 0.1),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: AppColors.lightError),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(_errorMessage!,
                         style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: AppColors.lightError),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close,
-                          color: AppColors.lightError),
-                      onPressed: () =>
-                          setState(() => _errorMessage = null),
-                    ),
-                  ],
-                ),
+                            ?.copyWith(color: AppColors.lightError)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: AppColors.lightError),
+                    onPressed: () => setState(() => _errorMessage = null),
+                  ),
+                ],
               ),
-
-            Expanded(
-              child: SingleChildScrollView(
-                padding: AppSpacing.paddingXl,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: AppSpacing.xl),
-
-                    // ── Order Summary ─────────────────────────────────────
-                    _isChecking
-                        ? HobifiShimmer.card()
-                        : _OrderSummaryCard(
-                            activityTitle: widget.activityTitle,
-                            bookingId: widget.bookingId,
-                            amount: widget.amount,
+            ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: AppSpacing.paddingXl,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSpacing.xl),
+                  _isChecking
+                      ? HobifiShimmer.card()
+                      : _OrderSummaryCard(
+                          activityTitle: widget.activityTitle,
+                          bookingId: widget.bookingId,
+                          amount: widget.amount,
+                        ),
+                  const SizedBox(height: AppSpacing.xl),
+                  Container(
+                    padding: AppSpacing.paddingLg,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          offset: const Offset(0, 2),
+                          blurRadius: 12,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-
-                    const SizedBox(height: AppSpacing.xl),
-
-                    // Payment method info
-                    Container(
-                      padding: AppSpacing.paddingLg,
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            offset: const Offset(0, 2),
-                            blurRadius: 12,
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.credit_card_rounded,
-                                color: colorScheme.primary, size: 22),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Pay with Card',
+                          child: Icon(Icons.credit_card_rounded,
+                              color: colorScheme.primary, size: 22),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Pay with Card',
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     color: colorScheme.onSurface,
                                     fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Visa, Mastercard, Meeza',
+                                  )),
+                              const SizedBox(height: 2),
+                              Text('Visa, Mastercard, Meeza',
                                   style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onSurface.withValues(alpha: 0.6),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: AppSpacing.xl),
-
-                    // Security badge
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.lock_rounded,
-                          size: 16,
-                          color:
-                              colorScheme.onSurface.withValues(alpha: 0.4),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Secured by Paymob',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color:
-                                colorScheme.onSurface.withValues(alpha: 0.4),
+                                    color: colorScheme.onSurface
+                                        .withValues(alpha: 0.6),
+                                  )),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.lock_rounded,
+                          size: 16,
+                          color: colorScheme.onSurface.withValues(alpha: 0.4)),
+                      const SizedBox(width: 6),
+                      Text('Secured by Paymob',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: 0.4),
+                          )),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
               ),
             ),
-
-            // ── Bottom Pay Button ─────────────────────────────────────────
-            Container(
-              padding: AppSpacing.paddingLg,
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border(top: BorderSide(color: theme.dividerColor)),
-              ),
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: _isLoading ? null : _payWithCard,
-                        icon: _isLoading
-                            ? SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: colorScheme.onPrimary,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.payment_rounded),
-                        label: Text(
-                          _isLoading
-                              ? 'Opening…'
-                              : 'Pay EGP ${widget.amount.toStringAsFixed(2)}',
+          ),
+          Container(
+            padding: AppSpacing.paddingLg,
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              border: Border(top: BorderSide(color: theme.dividerColor)),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading || _isChecking ? null : _openPaymentSheet,
+                      icon: _isLoading
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: colorScheme.onPrimary,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.payment_rounded),
+                      label: Text(
+                        _isLoading
+                            ? 'Loading…'
+                            : 'Pay EGP ${widget.amount.toStringAsFixed(2)}',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.full),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colorScheme.primary,
-                          foregroundColor: colorScheme.onPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.full),
-                          ),
-                          elevation: 0,
-                        ),
+                        elevation: 0,
                       ),
                     ),
-                    if (_isChecking) ...[
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colorScheme.primary,
-                            ),
+                  ),
+                  if (_isChecking) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Checking payment status…',
+                        ),
+                        const SizedBox(width: 8),
+                        Text('Checking payment status…',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurface
-                                  .withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                              color: colorScheme.onSurface.withValues(alpha: 0.6),
+                            )),
+                      ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 }
-
-// ── Reusable Widgets ──────────────────────────────────────────────────────────
 
 class _OrderSummaryCard extends StatelessWidget {
   final String activityTitle;
@@ -600,12 +613,10 @@ class _OrderSummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Total Amount',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
+              Text('Total Amount',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  )),
               Text(
                 'EGP ${amount.toStringAsFixed(2)}',
                 style: theme.textTheme.headlineSmall?.copyWith(
@@ -620,4 +631,3 @@ class _OrderSummaryCard extends StatelessWidget {
     );
   }
 }
-
