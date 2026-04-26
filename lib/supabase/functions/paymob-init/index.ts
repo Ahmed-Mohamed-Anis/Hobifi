@@ -48,8 +48,9 @@ serve(async (req: Request) => {
       user_email,
       user_name,
       user_phone,
-      payment_method = "card", // "card" | "wallet"
+      payment_method = "card", // "card" | "wallet" | "saved_card"
       wallet_phone,
+      card_token, // saved card token for returning users
     } = body;
 
     // ── Look up the real price from the database — never trust the client ──
@@ -68,6 +69,14 @@ serve(async (req: Request) => {
     const amount = activityRow.price as number;
     // Use the authenticated user's ID, not the client-supplied one
     const user_id = authenticatedUserId;
+
+    // Validate saved card request
+    if (payment_method === "saved_card" && !card_token) {
+      return new Response(
+        JSON.stringify({ error: "card_token is required for saved card payment" }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
 
     // Validate wallet request
     if (payment_method === "wallet") {
@@ -135,7 +144,6 @@ serve(async (req: Request) => {
       );
     }
 
-    // Use wallet integration ID for wallet payments, card integration ID for cards
     const integrationId = payment_method === "wallet"
       ? parseInt(PAYMOB_WALLET_INTEGRATION_ID!)
       : parseInt(PAYMOB_INTEGRATION_ID);
@@ -166,6 +174,7 @@ serve(async (req: Request) => {
         currency: "EGP",
         integration_id: integrationId,
         lock_order_when_paid: true,
+        save_card: true,
       }),
     });
     const paymentKeyData = await paymentKeyResponse.json();
@@ -185,7 +194,35 @@ serve(async (req: Request) => {
         booking_id,
       };
 
-    // ── Step 4b: Wallet — call Paymob pay endpoint ──────────────────────────
+    // ── Step 4b: Saved card — pay with token ────────────────────────────────
+    } else if (payment_method === "saved_card") {
+      const tokenPayResponse = await fetch("https://accept.paymob.com/api/acceptance/payments/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: { identifier: card_token, subtype: "TOKEN" },
+          payment_token: paymentToken,
+        }),
+      });
+      const tokenPayData = await tokenPayResponse.json();
+
+      // If 3DS is required Paymob returns redirect_url; otherwise success inline
+      const redirectUrl = tokenPayData.redirect_url;
+      const isSuccess = tokenPayData.success === true;
+
+      if (!isSuccess && !redirectUrl) {
+        throw new Error(`Token payment failed: ${JSON.stringify(tokenPayData)}`);
+      }
+
+      responsePayload = {
+        redirect_url: redirectUrl ?? null,
+        success: isSuccess,
+        payment_token: paymentToken,
+        order_id: orderId,
+        booking_id,
+      };
+
+    // ── Step 4c: Wallet — call Paymob pay endpoint ──────────────────────────
     } else {
       const walletResponse = await fetch("https://accept.paymob.com/api/acceptance/payments/pay", {
         method: "POST",

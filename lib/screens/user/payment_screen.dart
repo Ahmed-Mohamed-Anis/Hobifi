@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
+import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
+import 'package:hobby_haven/models/user_payment_method_model.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
@@ -37,6 +39,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isChecking = false;
   String? _errorMessage;
   Timer? _pollTimer;
+  UserPaymentMethod? _selectedSavedCard;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final userId = context.read<AuthService>().currentUser?.id;
+      if (userId != null) {
+        context.read<PaymentService>().loadSavedCards(userId);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -128,45 +142,79 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
-  Future<void> _openPaymentSheet() async {
-    if (widget.paymentUrl.isEmpty) {
-      setState(() => _errorMessage = 'Payment URL not available. Please try again.');
-      return;
+  Future<void> _pay() async {
+    setState(() { _isLoading = true; _errorMessage = null; });
+
+    try {
+      final auth = context.read<AuthService>();
+      final paymentService = context.read<PaymentService>();
+      final user = auth.currentUser!;
+
+      final result = await paymentService.initializePayment(
+        bookingId: widget.bookingId,
+        userId: user.id,
+        activityId: widget.activityId,
+        amount: widget.amount,
+        activityTitle: widget.activityTitle,
+        userEmail: user.email ?? '',
+        userName: user.name ?? '',
+        userPhone: '',
+        paymentMethod: _selectedSavedCard != null ? 'saved_card' : 'card',
+        cardToken: _selectedSavedCard?.cardToken,
+      );
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      // Saved card: if direct success, just poll; if 3DS needed, show WebView
+      if (_selectedSavedCard != null) {
+        if (result['success'] == true) {
+          _startPolling();
+        } else if (result['redirect_url'] != null) {
+          await _showWebViewSheet(result['redirect_url'] as String);
+        } else {
+          setState(() => _errorMessage = 'Saved card payment failed. Please try with a new card.');
+        }
+        return;
+      }
+
+      // New card: show iframe in WebView sheet
+      final iframeUrl = result['iframe_url'] as String?;
+      if (iframeUrl == null || iframeUrl.isEmpty) {
+        setState(() => _errorMessage = 'Payment URL not available. Please try again.');
+        return;
+      }
+      await _showWebViewSheet(iframeUrl);
+    } catch (e) {
+      if (mounted) setState(() { _isLoading = false; _errorMessage = e.toString(); });
     }
+  }
 
-    setState(() => _isLoading = true);
-
+  Future<void> _showWebViewSheet(String url) async {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (request) {
-            final url = request.url.toLowerCase();
-            // Paymob redirects to a URL containing success/failure info
-            if (url.contains('success=true') ||
-                url.contains('is_voided=false') && url.contains('pending=false')) {
-              Navigator.of(context).pop(); // close sheet
-              _startPolling();
-              return NavigationDecision.prevent;
-            }
-            if (url.contains('success=false') ||
-                url.contains('error') && url.contains('paymob')) {
-              Navigator.of(context).pop();
-              setState(() {
-                _paymentFailed = true;
-                _errorMessage = 'Payment was declined. Please try again.';
-              });
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(widget.paymentUrl));
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (request) {
+          final u = request.url.toLowerCase();
+          if (u.contains('success=true') ||
+              (u.contains('is_voided=false') && u.contains('pending=false'))) {
+            Navigator.of(context).pop();
+            _startPolling();
+            return NavigationDecision.prevent;
+          }
+          if (u.contains('success=false')) {
+            Navigator.of(context).pop();
+            setState(() {
+              _paymentFailed = true;
+              _errorMessage = 'Payment was declined. Please try again.';
+            });
+            return NavigationDecision.prevent;
+          }
+          return NavigationDecision.navigate;
+        },
+      ))
+      ..loadRequest(Uri.parse(url));
 
     await showModalBottomSheet(
       context: context,
@@ -179,46 +227,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
         height: MediaQuery.of(ctx).size.height * 0.92,
         child: Column(
           children: [
-            // Handle bar + header
             Container(
               padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    offset: const Offset(0, 2),
-                    blurRadius: 8,
-                  ),
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), offset: const Offset(0, 2), blurRadius: 8),
                 ],
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 40,
-                    height: 4,
+                    width: 40, height: 4,
                     margin: const EdgeInsets.only(right: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
                   ),
                   const Icon(Icons.lock_rounded, size: 16, color: Colors.green),
                   const SizedBox(width: 6),
-                  Text(
-                    'Secure Payment · Paymob',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
+                  Text('Secure Payment · Paymob',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.of(ctx).pop(),
-                  ),
+                  IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.of(ctx).pop()),
                 ],
               ),
             ),
@@ -228,7 +258,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
 
-    // Sheet was closed — if payment not yet detected, start polling
     if (mounted && !_paymentCompleted && !_paymentFailed) {
       _startPolling();
     }
@@ -404,17 +433,51 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           amount: widget.amount,
                         ),
                   const SizedBox(height: AppSpacing.xl),
-                  Container(
+                  // ── Saved cards ───────────────────────────────────────────
+                  Consumer<PaymentService>(
+                    builder: (_, paymentService, __) {
+                      final saved = paymentService.savedCards;
+                      if (saved.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Saved Cards',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                              )),
+                          const SizedBox(height: 10),
+                          ...saved.map((card) => _SavedCardTile(
+                                card: card,
+                                isSelected: _selectedSavedCard?.id == card.id,
+                                onTap: () => setState(() {
+                                  _selectedSavedCard =
+                                      _selectedSavedCard?.id == card.id ? null : card;
+                                }),
+                              )),
+                          const SizedBox(height: AppSpacing.md),
+                          Divider(color: theme.dividerColor),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+                      );
+                    },
+                  ),
+                  // ── New card option ───────────────────────────────────────
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedSavedCard = null),
+                    child: Container(
                     padding: AppSpacing.paddingLg,
                     decoration: BoxDecoration(
                       color: colorScheme.surface,
                       borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _selectedSavedCard == null
+                            ? colorScheme.primary
+                            : colorScheme.outline.withValues(alpha: 0.2),
+                        width: _selectedSavedCard == null ? 2 : 1,
+                      ),
                       boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          offset: const Offset(0, 2),
-                          blurRadius: 12,
-                        ),
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.05), offset: const Offset(0, 2), blurRadius: 12),
                       ],
                     ),
                     child: Row(
@@ -425,30 +488,30 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             color: colorScheme.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(Icons.credit_card_rounded,
-                              color: colorScheme.primary, size: 22),
+                          child: Icon(Icons.credit_card_rounded, color: colorScheme.primary, size: 22),
                         ),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Pay with Card',
+                              Text('Pay with New Card',
                                   style: theme.textTheme.titleSmall?.copyWith(
-                                    color: colorScheme.onSurface,
-                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.onSurface, fontWeight: FontWeight.bold,
                                   )),
                               const SizedBox(height: 2),
                               Text('Visa, Mastercard, Meeza',
                                   style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
+                                    color: colorScheme.onSurface.withValues(alpha: 0.6),
                                   )),
                             ],
                           ),
                         ),
+                        if (_selectedSavedCard == null)
+                          Icon(Icons.check_circle_rounded, color: colorScheme.primary, size: 20),
                       ],
                     ),
+                  ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   Row(
@@ -483,7 +546,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton.icon(
-                      onPressed: _isLoading || _isChecking ? null : _openPaymentSheet,
+                      onPressed: _isLoading || _isChecking ? null : _pay,
                       icon: _isLoading
                           ? SizedBox(
                               width: 20,
@@ -497,7 +560,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       label: Text(
                         _isLoading
                             ? 'Loading…'
-                            : 'Pay EGP ${widget.amount.toStringAsFixed(2)}',
+                            : _selectedSavedCard != null
+                                ? 'Pay EGP ${widget.amount.toStringAsFixed(2)} with ${_selectedSavedCard!.displayLabel}'
+                                : 'Pay EGP ${widget.amount.toStringAsFixed(2)}',
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: colorScheme.primary,
@@ -535,6 +600,51 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SavedCardTile extends StatelessWidget {
+  final UserPaymentMethod card;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SavedCardTile({required this.card, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.2),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.credit_card_rounded, color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5), size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                card.displayLabel,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+            if (isSelected) Icon(Icons.check_circle_rounded, color: colorScheme.primary, size: 20),
+          ],
+        ),
       ),
     );
   }

@@ -1,18 +1,36 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hobby_haven/models/payment_model.dart';
+import 'package:hobby_haven/models/user_payment_method_model.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 
 class PaymentService extends ChangeNotifier {
   List<PaymentModel> _payments = [];
+  List<UserPaymentMethod> _savedCards = [];
   bool _isLoading = false;
   String? _currentPaymentUrl;
   String? _currentPaymentToken;
 
   List<PaymentModel> get payments => _payments;
+  List<UserPaymentMethod> get savedCards => _savedCards;
   bool get isLoading => _isLoading;
   String? get currentPaymentUrl => _currentPaymentUrl;
   String? get currentPaymentToken => _currentPaymentToken;
+
+  Future<void> loadSavedCards(String userId) async {
+    try {
+      final data = await SupabaseConfig.client
+          .from('user_payment_methods')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      _savedCards = (data as List).map((j) => UserPaymentMethod.fromJson(j as Map<String, dynamic>)).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to load saved cards: $e');
+      _savedCards = [];
+    }
+  }
 
   /// Initialize payment session with Paymob
   Future<Map<String, dynamic>> initializePayment({
@@ -26,6 +44,7 @@ class PaymentService extends ChangeNotifier {
     required String userPhone,
     String paymentMethod = 'card',
     String? walletPhone,
+    String? cardToken,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -63,6 +82,7 @@ class PaymentService extends ChangeNotifier {
           'user_phone': userPhone,
           'payment_method': paymentMethod,
           if (walletPhone != null) 'wallet_phone': walletPhone,
+          if (cardToken != null) 'card_token': cardToken,
         },
       );
 

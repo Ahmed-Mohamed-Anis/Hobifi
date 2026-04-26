@@ -130,7 +130,7 @@ serve(async (req: Request) => {
     // Find payment by booking_id
     const { data: paymentData, error: findError } = await supabase
       .from("payments")
-      .select("id, booking_id, activity_id, business_earnings, status")
+      .select("id, booking_id, activity_id, business_earnings, status, user_id")
       .eq("booking_id", orderId)
       .single();
 
@@ -194,6 +194,20 @@ serve(async (req: Request) => {
         );
       }
       console.log("Released spot for failed payment:", paymentData.booking_id);
+    }
+
+    // Save card token on success (if Paymob returned one)
+    if (isSuccess && obj.card_token && paymentData.user_id) {
+      const maskedPan = obj.masked_pan || obj.source_data?.pan || null;
+      const cardType = obj.source_data?.type || null;
+      const { error: cardError } = await supabase
+        .from("user_payment_methods")
+        .upsert(
+          { user_id: paymentData.user_id, card_token: obj.card_token, masked_pan: maskedPan, card_type: cardType },
+          { onConflict: "user_id,card_token" }
+        );
+      if (cardError) console.error("Failed to save card token:", cardError);
+      else console.log("Card token saved for user:", paymentData.user_id);
     }
 
     // Credit business wallet on success
