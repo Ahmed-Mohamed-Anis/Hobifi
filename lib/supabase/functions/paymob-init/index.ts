@@ -100,40 +100,51 @@ serve(async (req: Request) => {
 
     // ── Step 2: Order Registration ──────────────────────────────────────────
     const amountCents = Math.round(amount * 100);
-    const orderResponse = await fetch("https://accept.paymob.com/api/ecommerce/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auth_token: authToken,
-        delivery_needed: false,
-        amount_cents: amountCents,
-        currency: "EGP",
-        merchant_order_id: booking_id,
-        items: [
-          {
-            name: activity_title,
-            amount_cents: amountCents,
-            quantity: 1,
-          },
-        ],
-      }),
-    });
-    const orderData = await orderResponse.json();
-    let orderId = orderData.id;
 
-    // Paymob rejects duplicate merchant_order_id — fetch the existing order directly from Paymob
-    if (!orderId && orderData.message === "duplicate") {
-      const searchResponse = await fetch(
-        `https://accept.paymob.com/api/ecommerce/orders?merchant_order_id=${booking_id}&auth_token=${authToken}`,
-        { method: "GET", headers: { "Content-Type": "application/json" } }
-      );
-      const searchData = await searchResponse.json();
-      if (searchData.results && searchData.results.length > 0) {
-        orderId = searchData.results[0].id;
-      }
+    // Reuse existing Paymob order if we already created one for this booking
+    const { data: existingPmt } = await supabase
+      .from("payments")
+      .select("transaction_id")
+      .eq("booking_id", booking_id)
+      .not("transaction_id", "is", null)
+      .maybeSingle();
+
+    let orderId: number | null = existingPmt?.transaction_id
+      ? parseInt(existingPmt.transaction_id)
+      : null;
+
+    if (!orderId) {
+      const orderResponse = await fetch("https://accept.paymob.com/api/ecommerce/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          auth_token: authToken,
+          delivery_needed: false,
+          amount_cents: amountCents,
+          currency: "EGP",
+          merchant_order_id: booking_id,
+          items: [{ name: activity_title, amount_cents: amountCents, quantity: 1 }],
+        }),
+      });
+      const orderData = await orderResponse.json();
+      orderId = orderData.id ?? null;
+      if (!orderId) throw new Error(`Order registration failed: ${JSON.stringify(orderData)}`);
+
+      // Save transaction_id immediately so retries can reuse this order
+      const platformFeeEarly = Math.round(amount * 10) / 100;
+      const businessEarningsEarly = Math.round((amount - platformFeeEarly) * 100) / 100;
+      await supabase.from("payments").upsert({
+        booking_id,
+        user_id,
+        activity_id,
+        amount,
+        platform_fee: platformFeeEarly,
+        business_earnings: businessEarningsEarly,
+        transaction_id: orderId.toString(),
+        status: "pending",
+        payment_method,
+      }, { onConflict: "booking_id" });
     }
-
-    if (!orderId) throw new Error(`Order registration failed: ${JSON.stringify(orderData)}`);
 
     // ── Step 3: Payment Key ─────────────────────────────────────────────────
     const nameParts = (user_name || "User").split(" ");
@@ -264,50 +275,12 @@ serve(async (req: Request) => {
       };
     }
 
-    // ── Save / update payment record in DB ──────────────────────────────────
-    const platformFee = Math.round(amount * 10) / 100;
-    const businessEarnings = Math.round((amount - platformFee) * 100) / 100;
-
-    // Check for existing active payment (pending/processing) for this booking
-    const { data: existingPayment } = await supabase
+    // ── Update payment_method if it changed (e.g. switching from card to saved_card) ─
+    await supabase
       .from("payments")
-      .select("id, transaction_id")
+      .update({ payment_method })
       .eq("booking_id", booking_id)
-      .in("status", ["pending", "processing"])
-      .maybeSingle();
-
-    if (existingPayment) {
-      // Update existing payment with new Paymob order/token
-      const { error: updateError } = await supabase
-        .from("payments")
-        .update({
-          transaction_id: orderId.toString(),
-          payment_method,
-        })
-        .eq("id", existingPayment.id);
-      if (updateError) console.error("Failed to update payment record:", updateError);
-    } else {
-      // Create new payment — the partial unique index prevents duplicates
-      const { error: paymentError } = await supabase.from("payments").insert({
-        booking_id,
-        user_id,
-        activity_id,
-        amount,
-        platform_fee: platformFee,
-        business_earnings: businessEarnings,
-        transaction_id: orderId.toString(),
-        status: "pending",
-        payment_method,
-      });
-      if (paymentError) {
-        // If duplicate key error, fetch the existing one
-        if (paymentError.code === "23505") {
-          console.log("Duplicate payment prevented — using existing record");
-        } else {
-          console.error("Failed to create payment record:", paymentError);
-        }
-      }
-    }
+      .in("status", ["pending", "processing"]);
 
     return new Response(JSON.stringify(responsePayload), {
       status: 200,
