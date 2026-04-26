@@ -10,6 +10,7 @@ import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/services/like_service.dart';
 import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
+import 'package:hobby_haven/services/location_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -73,6 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final likeService = context.watch<LikeService>();
     final themeService = context.watch<ThemeService>();
     final ratingService = context.watch<RatingService>();
+    final locationService = context.watch<LocationService>();
 
     final user = auth.currentUser;
     final userBookings = user == null ? 0 : bookings.getUserBookings(user.id).length;
@@ -209,6 +211,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                           )).toList(),
+                        ),
+                      ],
+                      // Location chip
+                      if (user?.city != null && user!.city!.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.location_on_rounded, size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5)),
+                            const SizedBox(width: 4),
+                            Text(
+                              user.city!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else if (locationService.savedLocation != null) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.my_location_rounded, size: 14, color: colorScheme.tertiary),
+                            const SizedBox(width: 4),
+                            Text(
+                              'GPS location saved',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.tertiary,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                       const SizedBox(height: 20),
