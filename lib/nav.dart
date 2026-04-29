@@ -115,6 +115,17 @@ class AppRouter {
             return AppRoutes.businessDashboard;
           }
 
+          // Hard block: onboarded business users must never see user shell routes.
+          // This catches any unexpected redirect that would land them at /feed etc.
+          if (user != null && user.role.name == 'business' && user.businessOnboarded) {
+            final isUserShellRoute = loc == AppRoutes.feed ||
+                loc == AppRoutes.bookings ||
+                loc == AppRoutes.friends ||
+                loc == AppRoutes.profile ||
+                loc == AppRoutes.onboarding;
+            if (isUserShellRoute) return AppRoutes.businessDashboard;
+          }
+
           // User role with no interests should go to onboarding
           if (user != null && user.role.name == 'user' && user.interests.isEmpty && !isOnboarding) {
             return AppRoutes.onboarding;
@@ -152,7 +163,10 @@ class AppRouter {
         // ─── User Shell with Bottom Nav ───
         ShellRoute(
           navigatorKey: _userShellNavigatorKey,
-          builder: (context, state, child) => _UserShellScreen(child: child),
+          builder: (context, state, child) => _UserShellScreen(
+            location: state.uri.path,
+            child: child,
+          ),
           routes: [
             GoRoute(
               path: AppRoutes.feed,
@@ -180,7 +194,10 @@ class AppRouter {
         // ─── Business Shell with Bottom Nav ───
         ShellRoute(
           navigatorKey: _businessShellNavigatorKey,
-          builder: (context, state, child) => _BusinessShellScreen(child: child),
+          builder: (context, state, child) => _BusinessShellScreen(
+            location: state.uri.path,
+            child: child,
+          ),
           routes: [
             GoRoute(
               path: AppRoutes.businessDashboard,
@@ -291,10 +308,10 @@ class AppRouter {
 // ─── User Bottom Nav Shell ───
 class _UserShellScreen extends StatelessWidget {
   final Widget child;
-  const _UserShellScreen({required this.child});
+  final String location;
+  const _UserShellScreen({required this.child, required this.location});
 
-  int _currentIndex(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
+  int get _currentIndex {
     if (location.startsWith(AppRoutes.bookings)) return 1;
     if (location.startsWith(AppRoutes.friends)) return 2;
     if (location.startsWith(AppRoutes.profile)) return 3;
@@ -305,7 +322,7 @@ class _UserShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final idx = _currentIndex(context);
+    final idx = _currentIndex;
 
     return Scaffold(
       body: child,
@@ -332,8 +349,8 @@ class _UserShellScreen extends StatelessWidget {
           backgroundColor: colorScheme.surface,
           indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
           indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          height: 68,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          height: 56,
           destinations: [
             NavigationDestination(
               icon: Icon(Icons.explore_outlined, color: idx == 0 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
@@ -365,10 +382,10 @@ class _UserShellScreen extends StatelessWidget {
 // ─── Business Bottom Nav Shell ───
 class _BusinessShellScreen extends StatelessWidget {
   final Widget child;
-  const _BusinessShellScreen({required this.child});
+  final String location;
+  const _BusinessShellScreen({required this.child, required this.location});
 
-  int _currentIndex(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
+  int get _currentIndex {
     if (location.startsWith(AppRoutes.businessCreateActivity)) return 1;
     if (location.startsWith(AppRoutes.businessWallet)) return 2;
     if (location.startsWith(AppRoutes.businessProfile)) return 3;
@@ -379,7 +396,7 @@ class _BusinessShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final idx = _currentIndex(context);
+    final idx = _currentIndex;
 
     return Scaffold(
       body: child,
@@ -406,8 +423,8 @@ class _BusinessShellScreen extends StatelessWidget {
           backgroundColor: colorScheme.surface,
           indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
           indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          height: 68,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          height: 56,
           destinations: [
             NavigationDestination(
               icon: Icon(Icons.dashboard_outlined, color: idx == 0 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
