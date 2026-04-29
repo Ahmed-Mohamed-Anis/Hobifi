@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/models/activity_model.dart';
@@ -115,7 +116,6 @@ class _ActivityCompactCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
@@ -198,7 +198,10 @@ class _ActivityCompactCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: onLikeTap,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  onLikeTap();
+                },
                 child: Icon(
                   isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                   color: isLiked
