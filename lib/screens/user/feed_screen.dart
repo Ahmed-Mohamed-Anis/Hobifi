@@ -19,6 +19,7 @@ import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 import 'package:hobby_haven/widgets/hobifi_search_bar.dart';
+import 'package:hobby_haven/utils/feed_filters.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -357,22 +358,31 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     }
 
-    final trendingActivities = activities.take(3).toList();
-    final popularActivities = activities.skip(1).take(4).toList();
-    final weekendActivities = activities.where((a) => a.spotsLeft > 5).take(3).toList();
-
     final auth = context.watch<AuthService>();
     final likeService = context.watch<LikeService>();
     final userLocation = context.watch<LocationService>().savedLocation;
+
+    final trendingActivities = trendingFilterSort(activities, 'All', userLocation);
+    final popularActivities = nearbyFilterSort(activities, 'All', userLocation);
+    final weekendActivities = weekendFilterSort(activities, 'All', userLocation);
 
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Trending section
-          const HobifiSectionHeader(
+          HobifiSectionHeader(
             title: 'Trending Experiences',
-            subtitle: 'Most popular right now',
+            subtitle: 'Highest rated right now',
+            actionLabel: 'Explore more',
+            onSeeAll: () => context.push(
+              '/section-explore',
+              extra: {
+                'title': 'Trending Experiences',
+                'subtitle': 'Highest rated right now',
+                'filterSort': trendingFilterSort,
+              },
+            ),
           ),
           SizedBox(
             height: 340,
@@ -403,9 +413,18 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 32),
 
           // Popular section
-          const HobifiSectionHeader(
+          HobifiSectionHeader(
             title: 'Popular Near You',
-            subtitle: "Discover what's happening around you",
+            subtitle: 'Closest activities to you',
+            actionLabel: 'Explore more',
+            onSeeAll: () => context.push(
+              '/section-explore',
+              extra: {
+                'title': 'Popular Near You',
+                'subtitle': 'Closest activities to you',
+                'filterSort': nearbyFilterSort,
+              },
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -429,9 +448,18 @@ class _FeedScreenState extends State<FeedScreen> {
           // Weekend section (if activities available)
           if (weekendActivities.isNotEmpty) ...[
             const SizedBox(height: 24),
-            const HobifiSectionHeader(
-              title: 'Weekend Adventures',
-              subtitle: 'Perfect for your next getaway',
+            HobifiSectionHeader(
+              title: 'Friday & Saturday',
+              subtitle: 'Activities this weekend',
+              actionLabel: 'Explore more',
+              onSeeAll: () => context.push(
+                '/section-explore',
+                extra: {
+                  'title': 'Friday & Saturday',
+                  'subtitle': 'Activities this weekend',
+                  'filterSort': weekendFilterSort,
+                },
+              ),
             ),
             SizedBox(
               height: 340,
