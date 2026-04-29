@@ -53,7 +53,7 @@ List<ActivityModel> nearbyFilterSort(
       return dA.compareTo(dB);
     });
 
-  final withoutCoords = filtered.where((a) => a.latitude == null).toList();
+  final withoutCoords = filtered.where((a) => a.latitude == null || a.longitude == null).toList();
   return [...withCoords, ...withoutCoords].take(4).toList();
 }
 
