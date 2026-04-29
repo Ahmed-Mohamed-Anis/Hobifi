@@ -52,9 +52,7 @@ class _BookingsScreenState extends State<BookingsScreen>
     final allBookings =
         bookingService.getUserBookings(authService.currentUser?.id ?? '');
     final upcomingBookings = allBookings
-        .where((b) =>
-            b.status == BookingStatus.confirmed ||
-            b.status == BookingStatus.pending)
+        .where((b) => b.status == BookingStatus.confirmed)
         .toList();
 
     return Scaffold(
