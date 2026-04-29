@@ -36,5 +36,23 @@ void main() {
       );
       expect(result, '0.0 km');
     });
+
+    test('distanceKm returns raw km between two points', () {
+      // Cairo centre to ~2.3 km north
+      final dist = DistanceUtil.distanceKm(
+        const LatLng(30.0444, 31.2357),
+        const LatLng(30.0650, 31.2357),
+      );
+      expect(dist, greaterThan(2.0));
+      expect(dist, lessThan(3.0));
+    });
+
+    test('distanceKm returns 0.0 for same point', () {
+      final dist = DistanceUtil.distanceKm(
+        const LatLng(30.0, 31.0),
+        const LatLng(30.0, 31.0),
+      );
+      expect(dist, closeTo(0.0, 0.001));
+    });
   });
 }

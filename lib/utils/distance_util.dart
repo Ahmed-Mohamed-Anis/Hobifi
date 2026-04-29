@@ -11,6 +11,10 @@ class DistanceUtil {
     return '${km.toStringAsFixed(1)} km';
   }
 
+  static double distanceKm(LatLng from, LatLng to) {
+    return _haversineKm(from.latitude, from.longitude, to.latitude, to.longitude);
+  }
+
   static double _haversineKm(double lat1, double lng1, double lat2, double lng2) {
     const r = 6371.0;
     final dLat = _toRad(lat2 - lat1);
