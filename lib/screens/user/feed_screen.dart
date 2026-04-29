@@ -376,7 +376,7 @@ class _FeedScreenState extends State<FeedScreen> {
             subtitle: 'Highest rated right now',
             actionLabel: 'Explore more',
             onSeeAll: () => context.push(
-              '/section-explore',
+              AppRoutes.sectionExplore,
               extra: {
                 'title': 'Trending Experiences',
                 'subtitle': 'Highest rated right now',
@@ -418,7 +418,7 @@ class _FeedScreenState extends State<FeedScreen> {
             subtitle: 'Closest activities to you',
             actionLabel: 'Explore more',
             onSeeAll: () => context.push(
-              '/section-explore',
+              AppRoutes.sectionExplore,
               extra: {
                 'title': 'Popular Near You',
                 'subtitle': 'Closest activities to you',
@@ -453,7 +453,7 @@ class _FeedScreenState extends State<FeedScreen> {
               subtitle: 'Activities this weekend',
               actionLabel: 'Explore more',
               onSeeAll: () => context.push(
-                '/section-explore',
+                AppRoutes.sectionExplore,
                 extra: {
                   'title': 'Friday & Saturday',
                   'subtitle': 'Activities this weekend',

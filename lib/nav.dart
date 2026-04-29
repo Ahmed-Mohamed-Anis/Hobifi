@@ -17,7 +17,9 @@ import 'package:hobby_haven/screens/business/wallet_screen.dart';
 import 'package:hobby_haven/screens/business/business_profile_screen.dart';
 import 'package:hobby_haven/screens/business/business_onboarding_screen.dart';
 import 'package:hobby_haven/screens/onboarding_screen.dart';
+import 'package:hobby_haven/screens/user/section_explore_screen.dart';
 import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/utils/feed_filters.dart';
 
 /// Smooth page transition for push navigation
 CustomTransitionPage<void> _buildSmoothTransition({
@@ -299,6 +301,22 @@ class AppRouter {
             state: state,
           ),
         ),
+        GoRoute(
+          path: AppRoutes.sectionExplore,
+          name: 'section-explore',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>;
+            return _buildSmoothTransition(
+              child: SectionExploreScreen(
+                title: extra['title'] as String,
+                subtitle: extra['subtitle'] as String,
+                filterSort: extra['filterSort'] as SectionFilterSort,
+              ),
+              state: state,
+            );
+          },
+        ),
       ],
     );
     return _router!;
@@ -471,4 +489,5 @@ class AppRoutes {
   static const String businessOnboarding = '/business-onboarding';
   static const String profileHistory = '/profile/history';
   static const String friends = '/friends';
+  static const String sectionExplore = '/section-explore';
 }
