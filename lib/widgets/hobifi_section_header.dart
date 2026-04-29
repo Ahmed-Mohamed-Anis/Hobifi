@@ -20,14 +20,18 @@ class HobifiSectionHeader extends StatelessWidget {
   /// Optional secondary label shown below the title at reduced opacity.
   final String? subtitle;
 
-  /// When provided, a "See all" link is rendered on the right.
+  /// When provided, an action link is rendered on the right.
   final VoidCallback? onSeeAll;
+
+  /// Label for the action link. Defaults to 'See all'.
+  final String actionLabel;
 
   const HobifiSectionHeader({
     super.key,
     required this.title,
     this.subtitle,
     this.onSeeAll,
+    this.actionLabel = 'See all',
   });
 
   @override
@@ -72,7 +76,7 @@ class HobifiSectionHeader extends StatelessWidget {
               child: GestureDetector(
                 onTap: onSeeAll,
                 child: Text(
-                  'See all',
+                  actionLabel,
                   style: textTheme.labelMedium?.copyWith(
                     color: colorScheme.primary,
                     fontWeight: FontWeight.w600,
