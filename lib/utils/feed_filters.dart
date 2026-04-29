@@ -9,7 +9,7 @@ typedef SectionFilterSort = List<ActivityModel> Function(
 );
 
 List<ActivityModel> _byCat(List<ActivityModel> list, String category) {
-  if (category == 'All') return list;
+  if (category == 'All') return List.of(list);
   return list.where((a) => a.category == category).toList();
 }
 
@@ -40,7 +40,7 @@ List<ActivityModel> nearbyFilterSort(
 
   if (userLocation == null) return filtered.take(4).toList();
 
-  final withCoords = filtered.where((a) => a.latitude != null).toList()
+  final withCoords = filtered.where((a) => a.latitude != null && a.longitude != null).toList()
     ..sort((a, b) {
       final dA = DistanceUtil.distanceKm(
         userLocation,
