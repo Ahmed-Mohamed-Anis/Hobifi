@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/activity_service.dart';
@@ -19,6 +18,7 @@ import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
+import 'package:hobby_haven/widgets/hobifi_search_bar.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -249,7 +249,7 @@ class _FeedScreenState extends State<FeedScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                  child: _MinimalSearchBar(
+                  child: HobifiSearchBar(
                     controller: _searchController,
                     onChanged: _onSearchChanged,
                     onClear: () {
@@ -540,10 +540,9 @@ class _MinimalHeader extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/images/hobifi_logo.png',
-                height: 70,
-                fit: BoxFit.contain,
+                height: 90,
+                fit: BoxFit.fitHeight,
               ),
-              const SizedBox(height: 4),
               Text(
                 mainTab == 'Explore' ? 'Discover' : mainTab,
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -579,98 +578,3 @@ class _MinimalHeader extends StatelessWidget {
   }
 }
 
-// ── Minimal Search Bar ────────────────────────────────────────────────────────
-
-class _MinimalSearchBar extends StatefulWidget {
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  const _MinimalSearchBar({
-    required this.controller,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  @override
-  State<_MinimalSearchBar> createState() => _MinimalSearchBarState();
-}
-
-class _MinimalSearchBarState extends State<_MinimalSearchBar> {
-  final FocusNode _focusNode = FocusNode();
-  bool _isFocused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() {
-      setState(() => _isFocused = _focusNode.hasFocus);
-    });
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      height: 52,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isFocused ? colorScheme.primary : theme.dividerColor,
-          width: _isFocused ? 1.5 : 1,
-        ),
-        boxShadow: _isFocused
-            ? [BoxShadow(color: colorScheme.primary.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))]
-            : null,
-      ),
-      child: TextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        onChanged: widget.onChanged,
-        style: TextStyle(
-          color: colorScheme.onSurface,
-          fontSize: 15,
-        ),
-        decoration: InputDecoration(
-          hintText: 'Search experiences...',
-          hintStyle: TextStyle(
-            color: theme.hintColor,
-            fontSize: 15,
-          ),
-          prefixIcon: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.only(left: 16, right: 12),
-            child: Icon(
-              Icons.search_rounded,
-              color: _isFocused ? colorScheme.primary : theme.hintColor,
-              size: 22,
-            ),
-          ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 50),
-          suffixIcon: widget.controller.text.isNotEmpty
-              ? IconButton(
-                  icon: Icon(Icons.close_rounded, color: theme.hintColor, size: 20),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    widget.onClear();
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-      ),
-    );
-  }
-}
