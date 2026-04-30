@@ -320,10 +320,13 @@ class _FeedScreenState extends State<FeedScreen> {
               if (_searchQuery.isEmpty) ...[
                 _buildDiscoveryFeed(activities, theme),
               ] else if (_isSearching) ...[
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(48),
-                    child: Center(child: CircularProgressIndicator()),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, __) => Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      child: HobifiShimmer.card(),
+                    ),
+                    childCount: 3,
                   ),
                 ),
               ] else ...[
