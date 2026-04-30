@@ -747,7 +747,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (userId != null) ...[
                   HobifiSectionHeader(
                     title: 'Recent Earnings',
-                    subtitle: '90% goes to you',
                     onSeeAll: () =>
                         context.push(AppRoutes.businessWallet),
                   ),
