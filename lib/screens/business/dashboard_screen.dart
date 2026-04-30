@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/services/wallet_service.dart';
+import 'package:hobby_haven/models/booking_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
@@ -148,7 +151,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             earnings: 0, bookings: 0, likes: 0, avgRating: 0.0);
       }
 
-// Fetch paid bookings, payments, likes, and ratings in parallel
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
+      final twoWeeksAgo = now.subtract(const Duration(days: 14));
+
+// Fetch paid bookings, payments, likes, ratings, and weekly deltas in parallel
       final bookingsFuture = SupabaseService.from('bookings')
           .select('price,status,activity_id')
           .inFilter('activity_id', activityIds)
@@ -163,13 +170,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final ratingsFuture = SupabaseService.from('ratings')
           .select('rating')
           .inFilter('activity_id', activityIds);
+      // This week's payments (last 7 days)
+      final paymentsThisWeekFuture = SupabaseService.from('payments')
+          .select('business_earnings,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
+          .gte('created_at', weekAgo.toIso8601String());
+      // Last week's payments (7–14 days ago)
+      final paymentsLastWeekFuture = SupabaseService.from('payments')
+          .select('business_earnings,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
+          .gte('created_at', twoWeeksAgo.toIso8601String())
+          .lt('created_at', weekAgo.toIso8601String());
+      // This week's bookings
+      final bookingsThisWeekFuture = SupabaseService.from('bookings')
+          .select('id,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', weekAgo.toIso8601String());
+      // Last week's bookings
+      final bookingsLastWeekFuture = SupabaseService.from('bookings')
+          .select('id,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', twoWeeksAgo.toIso8601String())
+          .lt('created_at', weekAgo.toIso8601String());
 
-      final results = await Future.wait(
-          [bookingsFuture, paymentsFuture, likesFuture, ratingsFuture]);
+      final results = await Future.wait([
+        bookingsFuture,
+        paymentsFuture,
+        likesFuture,
+        ratingsFuture,
+        paymentsThisWeekFuture,
+        paymentsLastWeekFuture,
+        bookingsThisWeekFuture,
+        bookingsLastWeekFuture,
+      ]);
       final bookingsRows = (results[0] as List).cast<Map<String, dynamic>>();
       final paymentsRows = (results[1] as List).cast<Map<String, dynamic>>();
       final likesRows = (results[2] as List);
       final ratingsRows = (results[3] as List);
+      final paymentsThisWeek = (results[4] as List).cast<Map<String, dynamic>>();
+      final paymentsLastWeek = (results[5] as List).cast<Map<String, dynamic>>();
+      final bookingsThisWeek = (results[6] as List);
+      final bookingsLastWeek = (results[7] as List);
 
 // Use business_earnings from payments (already has 10% deducted)
 // If no payments table yet, fallback to bookings with 10% deduction
@@ -198,11 +243,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
         avgRating = totalRating / ratingsRows.length;
       }
 
+// Compute week-over-week earnings trend
+      final earningsThisWeek = paymentsThisWeek.fold<double>(
+          0.0,
+          (sum, row) =>
+              sum + ((row['business_earnings'] as num?)?.toDouble() ?? 0.0));
+      final earningsLastWeek = paymentsLastWeek.fold<double>(
+          0.0,
+          (sum, row) =>
+              sum + ((row['business_earnings'] as num?)?.toDouble() ?? 0.0));
+
+      String? earningsTrendStr;
+      bool earningsTrendUp = true;
+      if (earningsLastWeek == 0 && earningsThisWeek > 0) {
+        earningsTrendStr = 'New';
+        earningsTrendUp = true;
+      } else if (earningsLastWeek > 0) {
+        final pct =
+            ((earningsThisWeek - earningsLastWeek) / earningsLastWeek * 100)
+                .round();
+        earningsTrendUp = pct >= 0;
+        earningsTrendStr = pct >= 0 ? '+$pct%' : '$pct%';
+      }
+
+// Compute week-over-week bookings trend
+      final bookingsThisWeekCount = bookingsThisWeek.length;
+      final bookingsLastWeekCount = bookingsLastWeek.length;
+
+      String? bookingsTrendStr;
+      bool bookingsTrendUp = true;
+      if (bookingsLastWeekCount == 0 && bookingsThisWeekCount > 0) {
+        bookingsTrendStr = 'New';
+        bookingsTrendUp = true;
+      } else if (bookingsLastWeekCount > 0) {
+        final pct = ((bookingsThisWeekCount - bookingsLastWeekCount) /
+                    bookingsLastWeekCount *
+                    100)
+                .round();
+        bookingsTrendUp = pct >= 0;
+        bookingsTrendStr = pct >= 0 ? '+$pct%' : '$pct%';
+      }
+
       return _BusinessStats(
           earnings: earnings,
           bookings: bookings,
           likes: likes,
-          avgRating: avgRating);
+          avgRating: avgRating,
+          earningsTrend: earningsTrendStr,
+          earningsTrendUp: earningsTrendUp,
+          bookingsTrend: bookingsTrendStr,
+          bookingsTrendUp: bookingsTrendUp);
     } catch (e) {
       debugPrint('Dashboard _fetchStats failed: $e');
       return const _BusinessStats(
@@ -328,8 +418,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final auth = context.read<AuthService>();
       final bookings = context.read<BookingService>();
+      final wallet = context.read<WalletService>();
       if (auth.currentUser != null) {
         await bookings.loadBusinessBookings(auth.currentUser!.id);
+        wallet.loadWallet(auth.currentUser!.id);
       }
     });
   }
@@ -339,7 +431,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final activityService = context.watch<ActivityService>();
-    context.watch<BookingService>(); // Keep reactive but unused directly
+    final bookingService = context.watch<BookingService>();
+    final walletService = context.watch<WalletService>();
     final authService = context.watch<AuthService>();
     final user = authService.currentUser;
     final userId = user?.id;
@@ -352,6 +445,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final businessActivities = userId == null
         ? const []
         : activityService.getActivitiesByBusinessId(userId);
+
+    // Today's confirmed bookings, sorted by time
+    final now = DateTime.now();
+    final todayBookings = bookingService.businessBookings.where((b) {
+      return b.dateTime.year == now.year &&
+          b.dateTime.month == now.month &&
+          b.dateTime.day == now.day &&
+          b.status == BookingStatus.confirmed;
+    }).toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
     return Scaffold(
       body: SafeArea(
@@ -435,6 +538,103 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
 
+                // ── Today's Schedule ────────────────────────────────
+                if (userId != null && todayBookings.isNotEmpty) ...[
+                  HobifiSectionHeader(
+                    title: "Today's Schedule",
+                    subtitle: '${todayBookings.length} confirmed',
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: todayBookings.map((booking) {
+                        return GestureDetector(
+                          onTap: () => context
+                              .push('${AppRoutes.ticket}/${booking.id}'),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.12)),
+                            ),
+                            child: Row(
+                              children: [
+                                // Time badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.1),
+                                    borderRadius:
+                                        BorderRadius.circular(9999),
+                                  ),
+                                  child: Text(
+                                    DateFormat('h:mm a')
+                                        .format(booking.dateTime),
+                                    style:
+                                        theme.textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Title + location
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        booking.activityTitle,
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.location_on_rounded,
+                                            size: 12,
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.4),
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Expanded(
+                                            child: Text(
+                                              booking.location,
+                                              style: theme
+                                                  .textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: colorScheme.onSurface
+                                                    .withValues(alpha: 0.5),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+
                 // ── Stat Cards (horizontal scroll) ──────────────────
                 if (userId == null)
                   _buildStatCardsShimmer()
@@ -462,12 +662,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               label: 'Total Revenue',
                               value:
                                   'EGP ${stats.earnings.toStringAsFixed(0)}',
+                              trend: stats.earningsTrend,
+                              trendPositive: stats.earningsTrendUp,
                             ),
                             const SizedBox(width: 12),
                             HobifiStatCard(
                               icon: Icons.confirmation_number_rounded,
                               label: 'Total Bookings',
                               value: stats.bookings.toString(),
+                              trend: stats.bookingsTrend,
+                              trendPositive: stats.bookingsTrendUp,
                             ),
                             const SizedBox(width: 12),
                             HobifiStatCard(
@@ -479,6 +683,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       );
                     },
+                  ),
+
+                // ── Wallet Balance Card ──────────────────────────────
+                if (userId != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: walletService.isLoading
+                        ? HobifiShimmer(
+                            width: double.infinity,
+                            height: 72,
+                            borderRadius: 16)
+                        : Container(
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.15)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  offset: const Offset(0, 4),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                // Wallet icon circle
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.1),
+                                  ),
+                                  child: Icon(
+                                    Icons.account_balance_wallet_rounded,
+                                    color: colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Balance column
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Available Balance',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: colorScheme.onSurface
+                                              .withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                      Text(
+                                        'EGP ${walletService.balance.toStringAsFixed(2)}',
+                                        style: theme.textTheme.titleLarge
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.bold),
+                                      ),
+                                      if (walletService.pendingPayouts > 0)
+                                        Text(
+                                          'EGP ${walletService.pendingPayouts.toStringAsFixed(2)} pending',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.45),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                // Withdraw button
+                                TextButton(
+                                  onPressed: () => context
+                                      .push(AppRoutes.businessWallet),
+                                  child: const Text('Withdraw →'),
+                                ),
+                              ],
+                            ),
+                          ),
                   ),
 
                 // ── Revenue Chart ────────────────────────────────────
@@ -928,11 +1219,20 @@ class _BusinessStats {
   final int bookings;
   final int likes;
   final double avgRating;
-  const _BusinessStats(
-      {required this.earnings,
-      required this.bookings,
-      required this.likes,
-      required this.avgRating});
+  final String? earningsTrend;
+  final bool earningsTrendUp;
+  final String? bookingsTrend;
+  final bool bookingsTrendUp;
+  const _BusinessStats({
+    required this.earnings,
+    required this.bookings,
+    required this.likes,
+    required this.avgRating,
+    this.earningsTrend,
+    this.earningsTrendUp = true,
+    this.bookingsTrend,
+    this.bookingsTrendUp = true,
+  });
 }
 
 class _PerActivityStats {
