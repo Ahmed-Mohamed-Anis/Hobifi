@@ -203,7 +203,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -320,10 +322,11 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
-  
+
   Widget _buildLogoBlock(ThemeData theme, ColorScheme colorScheme) {
     final String headline;
     final String subtext;
