@@ -116,6 +116,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final paymentsRows = await SupabaseService.from('payments')
           .select('id,activity_id,business_earnings,created_at,status')
           .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
           .order('created_at', ascending: false)
           .limit(10) as List<dynamic>;
 
@@ -256,19 +257,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         paymentEarnings[aId] = (paymentEarnings[aId] ?? 0.0) + earnings;
       }
 
-// Aggregate bookings and revenue (use payment earnings if available, else 90% of booking price)
+// Aggregate confirmed bookings count
       for (final rowDynamic in bookingsRows) {
         final row = rowDynamic as Map<String, dynamic>;
         final String aId = row['activity_id'] as String;
-        final double price = (row['price'] as num?)?.toDouble() ?? 0.0;
         final current = map[aId] ??
             const _PerActivityStats(
                 bookings: 0, revenue: 0.0, likes: 0, avgRating: 0.0);
-// Use 90% of price (after 10% platform fee)
-        final revenue = price * 0.9;
         map[aId] = _PerActivityStats(
             bookings: current.bookings + 1,
-            revenue: current.revenue + revenue,
+            revenue: paymentEarnings[aId] ?? 0.0,
             likes: current.likes,
             avgRating: current.avgRating);
       }
@@ -582,32 +580,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         sideTitles: SideTitles(
                                           showTitles: true,
                                           getTitlesWidget: (value, meta) {
-                                            if (value.toInt() < 0 ||
-                                                value.toInt() >=
-                                                    revenueData.length) {
+                                            final idx = value.toInt();
+                                            if (idx < 0 || idx >= revenueData.length) {
                                               return const SizedBox.shrink();
                                             }
-                                            // For >7 days only show every nth label
-                                            if (_selectedDays > 7 &&
-                                                value.toInt() %
-                                                        (_selectedDays ~/
-                                                            7) !=
-                                                    0) {
-                                              return const SizedBox.shrink();
+                                            // Step: show every nth label so they don't crowd
+                                            final step = _selectedDays <= 7 ? 1 : _selectedDays <= 30 ? 5 : 15;
+                                            if (idx % step != 0) return const SizedBox.shrink();
+
+                                            final day = revenueData[idx].date;
+                                            final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                                            final String label;
+                                            if (_selectedDays <= 7) {
+                                              label = weekdays[day.weekday - 1];
+                                            } else if (_selectedDays <= 30) {
+                                              label = '${months[day.month - 1]} ${day.day}';
+                                            } else {
+                                              label = '${months[day.month - 1]} ${day.day}';
                                             }
-                                            final day = revenueData[
-                                                    value.toInt()]
-                                                .date;
+
                                             return Padding(
-                                              padding: const EdgeInsets.only(
-                                                  top: 8),
+                                              padding: const EdgeInsets.only(top: 8),
                                               child: Text(
-                                                weekdays[day.weekday - 1],
-                                                style: theme
-                                                    .textTheme.labelSmall
-                                                    ?.copyWith(
-                                                  color: colorScheme.onSurface
-                                                      .withValues(alpha: 0.4),
+                                                label,
+                                                style: theme.textTheme.labelSmall?.copyWith(
+                                                  color: colorScheme.onSurface.withValues(alpha: 0.4),
                                                 ),
                                               ),
                                             );
