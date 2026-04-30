@@ -208,12 +208,12 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               // Logo block
               _buildLogoBlock(theme, colorScheme),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // Role toggle — sign-in only
               AnimatedSize(
@@ -229,13 +229,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     : const SizedBox.shrink(),
               ),
 
-              // Form card (only this part scrolls on very small screens)
-              Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: _buildFormCard(theme, colorScheme, authService, accentColor),
-                ),
-              ),
+              // Form card
+              _buildFormCard(theme, colorScheme, authService, accentColor),
 
               // Host / Explorer switch link — sign-up only
               AnimatedSwitcher(
@@ -342,12 +337,18 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return Column(
       children: [
-        Image.asset(
-          'assets/images/hobifi_logo.png',
-          height: 150,
-          fit: BoxFit.contain,
+        ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: 0.72,
+            child: Image.asset(
+              'assets/images/hobifi_logo.png',
+              height: 90,
+              fit: BoxFit.fitHeight,
+            ),
+          ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: Text(
@@ -440,7 +441,7 @@ class _AuthScreenState extends State<AuthScreen> {
     Color accentColor,
   ) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
