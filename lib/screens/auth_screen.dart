@@ -343,7 +343,7 @@ class _AuthScreenState extends State<AuthScreen> {
             heightFactor: 0.72,
             child: Image.asset(
               'assets/images/hobifi_logo.png',
-              height: 90,
+              height: 130,
               fit: BoxFit.fitHeight,
             ),
           ),
