@@ -966,9 +966,10 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
             comment: comment.isNotEmpty ? comment : null,
           );
       if (mounted) {
-        await context
-            .read<RatingService>()
-            .loadActivityReviews(widget.activity.id, force: true);
+        await Future.wait([
+          context.read<RatingService>().loadActivityReviews(widget.activity.id, force: true),
+          context.read<ActivityService>().refreshActivities(),
+        ]);
       }
       if (mounted) {
         setState(() {
