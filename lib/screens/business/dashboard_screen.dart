@@ -255,10 +255,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       String? earningsTrendStr;
       bool earningsTrendUp = true;
-      if (earningsLastWeek == 0 && earningsThisWeek > 0) {
-        earningsTrendStr = 'New';
-        earningsTrendUp = true;
-      } else if (earningsLastWeek > 0) {
+      if (earningsLastWeek > 0) {
         final pct =
             ((earningsThisWeek - earningsLastWeek) / earningsLastWeek * 100)
                 .round();
@@ -272,10 +269,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       String? bookingsTrendStr;
       bool bookingsTrendUp = true;
-      if (bookingsLastWeekCount == 0 && bookingsThisWeekCount > 0) {
-        bookingsTrendStr = 'New';
-        bookingsTrendUp = true;
-      } else if (bookingsLastWeekCount > 0) {
+      if (bookingsLastWeekCount > 0) {
         final pct = ((bookingsThisWeekCount - bookingsLastWeekCount) /
                     bookingsLastWeekCount *
                     100)
@@ -765,7 +759,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 TextButton(
                                   onPressed: () => context
                                       .push(AppRoutes.businessWallet),
-                                  child: const Text('Withdraw →'),
+                                  child: const Text('Withdraw'),
                                 ),
                               ],
                             ),
@@ -871,6 +865,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         sideTitles: SideTitles(
                                           showTitles: true,
                                           getTitlesWidget: (value, meta) {
+                                            // Skip non-integer positions (fl_chart calls this for intermediate values too)
+                                            if (value != value.roundToDouble()) return const SizedBox.shrink();
                                             final idx = value.toInt();
                                             if (idx < 0 || idx >= revenueData.length) {
                                               return const SizedBox.shrink();
