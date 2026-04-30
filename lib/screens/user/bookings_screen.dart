@@ -61,7 +61,7 @@ class _BookingsScreenState extends State<BookingsScreen>
           children: [
             // Header
             Padding(
-              padding: AppSpacing.paddingLg,
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -195,7 +195,7 @@ class _UpcomingList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: refresh,
       child: ListView(
-        padding: AppSpacing.horizontalLg,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         children: [
           ...bookings.map((b) => BookingCard(booking: b)),
           // Explore more banner
@@ -204,7 +204,7 @@ class _UpcomingList extends StatelessWidget {
             padding: AppSpacing.paddingXl,
             decoration: BoxDecoration(
               color: theme.colorScheme.secondary.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: theme.colorScheme.secondary.withValues(alpha: 0.19),
               ),
@@ -236,7 +236,7 @@ class _UpcomingList extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.colorScheme.tertiary,
                     foregroundColor: theme.colorScheme.onSurface,
-                    minimumSize: const Size(double.infinity, 48),
+                    minimumSize: const Size(double.infinity, 52),
                   ),
                   child: const Text('Explore Activities'),
                 ),

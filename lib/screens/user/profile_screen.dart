@@ -88,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               // Header
               Padding(
-                padding: AppSpacing.paddingLg,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
                 child: Row(
                   children: [
                     Text('Profile', style: theme.textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface)),
@@ -97,12 +97,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               // Profile card
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Container(
                   padding: AppSpacing.paddingLg,
                   decoration: BoxDecoration(
                     color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
@@ -264,7 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
               // Settings section
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -297,7 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
               // Logout button
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -457,7 +457,7 @@ class _DarkModeToggle extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDarkMode
-                        ? [const Color(0xFF1E1B7A), const Color(0xFF4A47B8)]
+                        ? [colorScheme.primary, colorScheme.primaryContainer]
                         : [AppColors.orange, AppColors.lime],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,

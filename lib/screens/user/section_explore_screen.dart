@@ -76,15 +76,16 @@ class _SectionExploreScreenState extends State<SectionExploreScreen> {
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 16, 20, 12),
+              padding: const EdgeInsets.fromLTRB(12, 16, 20, 12),
               child: Row(
                 children: [
                   IconButton(
                     icon: Icon(Icons.arrow_back_rounded, color: colorScheme.onSurface),
                     onPressed: () => context.pop(),
                     padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

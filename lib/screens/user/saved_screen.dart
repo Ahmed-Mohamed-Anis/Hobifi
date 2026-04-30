@@ -205,7 +205,7 @@ class _ActivityCompactCard extends StatelessWidget {
                 child: Icon(
                   isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                   color: isLiked
-                      ? const Color(0xFFE53935)
+                      ? colorScheme.error
                       : colorScheme.onSurface.withValues(alpha: 0.4),
                   size: 22,
                 ),

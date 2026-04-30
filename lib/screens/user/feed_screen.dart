@@ -569,10 +569,16 @@ class _MinimalHeader extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Image.asset(
-                'assets/images/hobifi_logo.png',
-                height: 90,
-                fit: BoxFit.fitHeight,
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  heightFactor: 0.72,
+                  child: Image.asset(
+                    'assets/images/hobifi_logo.png',
+                    height: 90,
+                    fit: BoxFit.fitHeight,
+                  ),
+                ),
               ),
               Text(
                 mainTab == 'Explore' ? 'Discover' : mainTab,
