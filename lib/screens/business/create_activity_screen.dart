@@ -34,11 +34,10 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   String _selectedCategory = 'Art';
   bool _isInstantBooking = true;
   bool _isPublic = true;
-  String? _imageUrl; // uploaded primary image public URL
-  final List<String> _imageUrls = []; // gallery images
+  String? _imageUrl;
+  final List<String> _imageUrls = [];
   bool _isUploading = false;
 
-  // Feature tags
   static const List<String> _availableTags = [
     'Equipment Included',
     'Small Groups',
@@ -52,14 +51,12 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   ];
   final Set<String> _selectedTags = {'Equipment Included', 'Small Groups'};
 
-  // Schedule state
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
 
-  // Recurrence state
   bool _repeats = false;
-  String _frequency = 'weekly'; // 'weekly' | 'biweekly' | 'monthly'
+  String _frequency = 'weekly';
   DateTime? _repeatUntil;
 
   Future<String> _uploadBytes(Uint8List bytes, String filename) async {
@@ -84,7 +81,6 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     }
   }
 
-  // Pick multiple images and upload to Supabase Storage
   Future<void> _pickAndUploadImages() async {
     try {
       setState(() => _isUploading = true);
@@ -99,7 +95,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
         final bytes = await picked.readAsBytes();
         final publicUrl = await _uploadBytes(bytes, picked.name);
         _imageUrls.add(publicUrl);
-        _imageUrl ??= publicUrl; // ensure primary assigned
+        _imageUrl ??= publicUrl;
       }
       if (mounted) setState(() {});
     } catch (e) {
@@ -277,7 +273,6 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           );
           return;
         }
-        // Use end-of-day for the until date so same-day comparisons work.
         final endInclusive = DateTime(_repeatUntil!.year, _repeatUntil!.month, _repeatUntil!.day, 23, 59, 59);
         dates = _occurrenceDates(baseStart, _frequency, endInclusive);
         if (dates.length > 26) {
@@ -315,7 +310,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           duration: durationLabel,
           maxGuests: int.tryParse(_maxGuestsController.text) ?? 10,
           spotsLeft: int.tryParse(_maxGuestsController.text) ?? 10,
-          dateTime: occurrenceStart, // backwards compatible primary datetime
+          dateTime: occurrenceStart,
           startAt: occurrenceStart,
           endAt: occurrenceEnd,
           isInstantBooking: _isInstantBooking,
@@ -353,6 +348,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final dividerColor = colorScheme.outline.withValues(alpha: 0.2);
 
     return Scaffold(
       body: SafeArea(
@@ -360,14 +357,20 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           children: [
             Container(
               padding: AppSpacing.paddingLg,
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.lightDivider)),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: dividerColor)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const AppBackButton(),
-                  Text('Create Activity', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: AppColors.lightPrimaryText)),
+                  Text(
+                    'Create Activity',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
                   const SizedBox(width: 40),
                 ],
               ),
@@ -383,9 +386,9 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       height: 180,
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: AppColors.lightSurface,
+                        color: colorScheme.surface,
                         borderRadius: BorderRadius.circular(AppRadius.xl),
-                        border: Border.all(color: AppColors.lightDivider, width: 2),
+                        border: Border.all(color: dividerColor, width: 2),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppRadius.xl),
@@ -398,9 +401,15 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(Icons.add_a_photo_rounded, color: AppColors.lightPrimary, size: 32),
+                                    Icon(Icons.add_a_photo_rounded, color: colorScheme.primary, size: 32),
                                     const SizedBox(height: 8),
-                                    Text('Upload Photos', style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimary, fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'Upload Photos',
+                                      style: theme.textTheme.labelLarge?.copyWith(
+                                        color: colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               )
@@ -421,11 +430,13 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                                               child: Container(
                                                 width: 120,
                                                 decoration: BoxDecoration(
-                                                  color: AppColors.lightBackground,
+                                                  color: colorScheme.surfaceContainerLowest,
                                                   borderRadius: BorderRadius.circular(AppRadius.lg),
-                                                  border: Border.all(color: AppColors.lightDivider),
+                                                  border: Border.all(color: dividerColor),
                                                 ),
-                                                child: const Center(child: Icon(Icons.add_rounded, color: AppColors.lightPrimary)),
+                                                child: Center(
+                                                  child: Icon(Icons.add_rounded, color: colorScheme.primary),
+                                                ),
                                               ),
                                             );
                                           }
@@ -486,14 +497,14 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         decoration: BoxDecoration(
-                          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                          border: Border.all(color: colorScheme.outlineVariant),
                           borderRadius: BorderRadius.circular(14),
-                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                          color: colorScheme.surfaceContainerLowest,
                         ),
                         child: Row(
                           children: [
                             Icon(Icons.location_on_rounded,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                                color: colorScheme.onSurface.withValues(alpha: 0.5),
                                 size: 20),
                             const SizedBox(width: 12),
                             Expanded(
@@ -501,10 +512,10 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                                 valueListenable: _locationController,
                                 builder: (_, value, __) => Text(
                                   value.text.isEmpty ? 'Tap to set location on map' : value.text,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  style: theme.textTheme.bodyMedium?.copyWith(
                                     color: value.text.isEmpty
-                                        ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)
-                                        : Theme.of(context).colorScheme.onSurface,
+                                        ? colorScheme.onSurface.withValues(alpha: 0.4)
+                                        : colorScheme.onSurface,
                                   ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -512,7 +523,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                               ),
                             ),
                             Icon(Icons.chevron_right_rounded,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
+                                color: colorScheme.onSurface.withValues(alpha: 0.4)),
                           ],
                         ),
                       ),
@@ -524,7 +535,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              FormLabel(label: 'Price (USD)'),
+                              FormLabel(label: 'Price (EGP)'),
                               TextField(
                                 controller: _priceController,
                                 keyboardType: TextInputType.number,
@@ -556,25 +567,26 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       ],
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    // Schedule section
                     FormLabel(label: 'Schedule'),
                     Container(
                       padding: AppSpacing.paddingMd,
                       decoration: BoxDecoration(
-                        color: AppColors.lightSurface,
+                        color: colorScheme.surface,
                         borderRadius: BorderRadius.circular(AppRadius.xl),
-                        border: Border.all(color: AppColors.lightDivider),
+                        border: Border.all(color: dividerColor),
                       ),
                       child: Row(
                         children: [
                           Expanded(
                             child: TextButton.icon(
                               onPressed: _pickDate,
-                              icon: const Icon(Icons.event_rounded, color: AppColors.lightPrimary),
-                              label: Text('${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                  style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              icon: Icon(Icons.event_rounded, color: colorScheme.primary),
+                              label: Text(
+                                '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                style: theme.textTheme.labelLarge?.copyWith(color: colorScheme.onSurface),
+                              ),
                               style: TextButton.styleFrom(
-                                backgroundColor: AppColors.lightBackground,
+                                backgroundColor: colorScheme.surfaceContainerLowest,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                             ),
@@ -583,10 +595,13 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                           Expanded(
                             child: TextButton.icon(
                               onPressed: _pickStartTime,
-                              icon: const Icon(Icons.schedule_rounded, color: AppColors.lightPrimary),
-                              label: Text(_startTime.format(context), style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              icon: Icon(Icons.schedule_rounded, color: colorScheme.primary),
+                              label: Text(
+                                _startTime.format(context),
+                                style: theme.textTheme.labelLarge?.copyWith(color: colorScheme.onSurface),
+                              ),
                               style: TextButton.styleFrom(
-                                backgroundColor: AppColors.lightBackground,
+                                backgroundColor: colorScheme.surfaceContainerLowest,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                             ),
@@ -595,10 +610,13 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                           Expanded(
                             child: TextButton.icon(
                               onPressed: _pickEndTime,
-                              icon: const Icon(Icons.schedule_rounded, color: AppColors.lightPrimary),
-                              label: Text(_endTime.format(context), style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText)),
+                              icon: Icon(Icons.schedule_rounded, color: colorScheme.primary),
+                              label: Text(
+                                _endTime.format(context),
+                                style: theme.textTheme.labelLarge?.copyWith(color: colorScheme.onSurface),
+                              ),
                               style: TextButton.styleFrom(
-                                backgroundColor: AppColors.lightBackground,
+                                backgroundColor: colorScheme.surfaceContainerLowest,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                             ),
@@ -607,7 +625,6 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    // Recurrence section
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('This activity repeats'),
@@ -649,9 +666,9 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                     Container(
                       padding: AppSpacing.paddingLg,
                       decoration: BoxDecoration(
-                        color: AppColors.lightSurface,
+                        color: colorScheme.surface,
                         borderRadius: BorderRadius.circular(AppRadius.xl),
-                        border: Border.all(color: AppColors.lightDivider),
+                        border: Border.all(color: dividerColor),
                       ),
                       child: Column(
                         children: [
@@ -662,19 +679,30 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Instant Booking', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: AppColors.lightPrimaryText)),
-                                    Text('Users don\'t need to wait for your approval', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText)),
+                                    Text(
+                                      'Instant Booking',
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colorScheme.onSurface,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Users don\'t need to wait for your approval',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               Switch(
                                 value: _isInstantBooking,
                                 onChanged: (val) => setState(() => _isInstantBooking = val),
-                                activeTrackColor: AppColors.lightPrimary,
+                                activeTrackColor: colorScheme.primary,
                               ),
                             ],
                           ),
-                          const Divider(color: AppColors.lightDivider),
+                          Divider(color: dividerColor),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -682,15 +710,26 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Public Activity', style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: AppColors.lightPrimaryText)),
-                                    Text('Visible to all HOBIFI users', style: theme.textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText)),
+                                    Text(
+                                      'Public Activity',
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colorScheme.onSurface,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Visible to all HOBIFI users',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               Switch(
                                 value: _isPublic,
                                 onChanged: (val) => setState(() => _isPublic = val),
-                                activeTrackColor: AppColors.lightPrimary,
+                                activeTrackColor: colorScheme.primary,
                               ),
                             ],
                           ),
@@ -698,7 +737,6 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    // Feature tags
                     Text('Features', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: AppSpacing.sm),
                     Wrap(
@@ -718,8 +756,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                               }
                             });
                           },
-                          selectedColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-                          checkmarkColor: theme.colorScheme.primary,
+                          selectedColor: colorScheme.primary.withValues(alpha: 0.15),
+                          checkmarkColor: colorScheme.primary,
                         );
                       }).toList(),
                     ),
@@ -739,8 +777,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                       icon: const Icon(Icons.rocket_launch_rounded),
                       label: const Text('Launch Activity'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.lightPrimary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         minimumSize: const Size(double.infinity, 56),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.full)),
                       ),
@@ -767,7 +805,13 @@ class FormLabel extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(label, style: theme.textTheme.labelLarge?.copyWith(color: AppColors.lightPrimaryText, fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }
@@ -782,6 +826,7 @@ class CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: InkWell(
@@ -789,11 +834,19 @@ class CategoryChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.lightPrimary : AppColors.lightSurface,
+            color: isSelected ? colorScheme.primary : colorScheme.surface,
             borderRadius: BorderRadius.circular(AppRadius.full),
-            border: Border.all(color: isSelected ? Colors.transparent : AppColors.lightDivider),
+            border: Border.all(
+              color: isSelected ? Colors.transparent : colorScheme.outline.withValues(alpha: 0.2),
+            ),
           ),
-          child: Text(label, style: theme.textTheme.labelLarge?.copyWith(color: isSelected ? Colors.white : AppColors.lightSecondaryText, fontWeight: FontWeight.w600)),
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );
