@@ -302,7 +302,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           description: InputSanitizer.sanitize(_descriptionController.text, maxLength: 2000),
           category: _selectedCategory,
           price: double.tryParse(_priceController.text) ?? 0,
-          location: _locationController.text.trim(),
+          location: InputSanitizer.sanitize(_locationController.text.trim(), maxLength: 200),
           imageUrl: _imageUrl ?? 'assets/images/pottery_class_hands_clay_null_1769445300693.jpg',
           imageUrls: List<String>.from(_imageUrls),
           rating: 0.0,

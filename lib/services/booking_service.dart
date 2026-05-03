@@ -204,6 +204,9 @@ class BookingService extends ChangeNotifier {
   }
 
   Future<void> updateBookingStatus(String bookingId, BookingStatus status) async {
+    if (status == BookingStatus.confirmed) {
+      throw Exception('Booking confirmation is handled by the payment system.');
+    }
     try {
       await SupabaseService.update(
         'bookings',
@@ -223,12 +226,16 @@ class BookingService extends ChangeNotifier {
   /// Cancel a booking via the server-side edge function.
   /// Enforces 24-hour cancellation policy and handles refunds.
   Future<Map<String, dynamic>> cancelBookingServerSide(String bookingId) async {
+    final token = SupabaseConfig.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) {
+      return {'success': false, 'error': 'Session expired. Please sign in again.'};
+    }
     try {
       final response = await http.post(
         Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/process-cancellation'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${SupabaseConfig.auth.currentSession?.accessToken ?? SupabaseConfig.anonKey}',
+          'Authorization': 'Bearer $token',
           'apikey': SupabaseConfig.anonKey,
         },
         body: jsonEncode({'booking_id': bookingId}),

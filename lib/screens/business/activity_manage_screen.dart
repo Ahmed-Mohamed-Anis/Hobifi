@@ -8,6 +8,7 @@ import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/utils/booking_code.dart';
+import 'package:hobby_haven/utils/input_sanitizer.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -354,9 +355,9 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
       final maxGuests = int.tryParse(_maxGuestsController.text.trim()) ?? 0;
 
       final updated = _activity!.copyWith(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        location: _locationController.text.trim(),
+        title: InputSanitizer.sanitize(_titleController.text.trim(), maxLength: 100),
+        description: InputSanitizer.sanitize(_descriptionController.text.trim(), maxLength: 2000),
+        location: InputSanitizer.sanitize(_locationController.text.trim(), maxLength: 200),
         category: _selectedCategory,
         price: price,
         maxGuests: maxGuests,

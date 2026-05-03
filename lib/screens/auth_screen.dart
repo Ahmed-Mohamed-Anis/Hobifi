@@ -36,6 +36,13 @@ class _AuthScreenState extends State<AuthScreen> {
     // which can unmount this State and make context invalid.
     final messenger = ScaffoldMessenger.of(context);
 
+    if (_isSignUp && _passwordController.text.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 8 characters.')),
+      );
+      return;
+    }
+
     Map<String, dynamic> result;
     if (_isSignUp) {
       result = await authService.signUp(
@@ -801,8 +808,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
     final newPassword = _newPasswordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    if (newPassword.isEmpty || newPassword.length < 6) {
-      setState(() => _errorMessage = 'Password must be at least 6 characters');
+    if (newPassword.isEmpty || newPassword.length < 8) {
+      setState(() => _errorMessage = 'Password must be at least 8 characters');
       return;
     }
 
