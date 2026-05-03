@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hobby_haven/models/user_model.dart';
+import 'package:hobby_haven/services/push_notification_service.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/auth/google_auth.dart';
 import 'package:hobby_haven/auth/apple_auth.dart';
@@ -74,6 +75,7 @@ class AuthService extends ChangeNotifier {
         enriched['email'] ??= SupabaseConfig.auth.currentUser?.email;
         _currentUser = UserModel.fromJson(enriched);
         _safeNotify();
+        PushNotificationService.registerToken(_currentUser!.id);
         return;
       }
 
@@ -105,6 +107,7 @@ class AuthService extends ChangeNotifier {
         enriched['email'] ??= email;
         _currentUser = UserModel.fromJson(enriched);
         _safeNotify();
+        PushNotificationService.registerToken(_currentUser!.id);
       }
     } catch (e) {
       debugPrint('Failed to load user: $e');
@@ -248,6 +251,7 @@ class AuthService extends ChangeNotifier {
     _safeNotify();
 
     try {
+      if (_currentUser != null) await PushNotificationService.unregisterToken(_currentUser!.id);
       await SupabaseConfig.auth.signOut();
       _currentUser = null;
     } catch (e) {
