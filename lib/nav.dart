@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:hobby_haven/services/connectivity_service.dart';
 import 'package:hobby_haven/screens/auth_screen.dart';
 import 'package:hobby_haven/screens/user/feed_screen.dart';
 import 'package:hobby_haven/screens/user/activity_details_screen.dart';
@@ -343,7 +345,12 @@ class _UserShellScreen extends StatelessWidget {
     final idx = _currentIndex;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const _OfflineBanner(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -417,7 +424,12 @@ class _BusinessShellScreen extends StatelessWidget {
     final idx = _currentIndex;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const _OfflineBanner(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -465,6 +477,39 @@ class _BusinessShellScreen extends StatelessWidget {
               label: 'Profile',
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Offline Banner ───
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final isOnline = context.watch<ConnectivityService>().isOnline;
+    if (isOnline) return const SizedBox.shrink();
+    return Material(
+      color: Colors.black87,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          color: Colors.black87,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, color: Colors.white70, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                'No internet connection',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+              ),
+            ],
+          ),
         ),
       ),
     );
