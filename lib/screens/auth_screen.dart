@@ -16,15 +16,20 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isUser = true;
   bool _isSignUp = true;
   bool _obscurePassword = true;
+  bool _isVerifyingEmail = false;
+  String _pendingEmail = '';
+  bool _resendCooldown = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
+  final _otpController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -58,21 +63,11 @@ class _AuthScreenState extends State<AuthScreen> {
     if (result['success'] == true) {
       if (!mounted) return;
       if (result['requiresConfirmation'] == true) {
-        // Auto sign-in after sign-up so the user doesn't have to re-enter credentials
-        final signInResult = await authService.signIn(
-          _emailController.text,
-          _passwordController.text,
-          role,
-        );
-        if (!mounted) return;
-        if (signInResult['success'] == true) {
-          context.go('/');
-        } else if (signInResult['message']?.toString().contains('not confirmed') == true) {
-          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
-        } else {
-          // Sign-in failed for another reason — show the confirmation dialog as fallback
-          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
-        }
+        setState(() {
+          _isVerifyingEmail = true;
+          _pendingEmail = _emailController.text.trim();
+          _otpController.clear();
+        });
       } else {
         // Let the router redirect handle navigation based on role + onboarding state
         context.go('/');
@@ -88,6 +83,49 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleVerifyEmail() async {
+    final otp = _otpController.text.trim();
+    if (otp.length < 6) {
+      _showErrorSnackBar('Please enter the 6-digit code from your email.');
+      return;
+    }
+    final authService = context.read<AuthService>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await authService.verifyEmailOTP(_pendingEmail, otp);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      context.go('/');
+    } else {
+      messenger.showSnackBar(SnackBar(
+        content: Text(result['message'] ?? 'Verification failed.'),
+        backgroundColor: AppColors.lightError,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
+  }
+
+  Future<void> _handleResendOTP() async {
+    if (_resendCooldown) return;
+    final authService = context.read<AuthService>();
+    final result = await authService.resendSignupOTP(_pendingEmail);
+    if (!mounted) return;
+    setState(() => _resendCooldown = true);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(result['success'] == true
+          ? 'Code resent to $_pendingEmail'
+          : result['message'] ?? 'Failed to resend.'),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+    // 30-second cooldown before allowing another resend
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) setState(() => _resendCooldown = false);
+    });
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -146,53 +184,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  void _showEmailConfirmationDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        icon: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.orange.withValues(alpha: 0.2), AppColors.lime.withValues(alpha: 0.2)],
-            ),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.mark_email_read_rounded, color: AppColors.orange, size: 32),
-        ),
-        title: const Text('Verify Your Email', textAlign: TextAlign.center),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 16),
-            Text('After confirming, you can sign in with your credentials.', 
-              textAlign: TextAlign.center, 
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              setState(() {
-                _isSignUp = false;
-                _obscurePassword = true;
-                _emailController.clear();
-                _passwordController.clear();
-                _nameController.clear();
-              });
-            },
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showForgotPasswordDialog() {
     showDialog(
       context: context,
@@ -207,6 +198,10 @@ class _AuthScreenState extends State<AuthScreen> {
     final colorScheme = theme.colorScheme;
     final authService = context.watch<AuthService>();
     final accentColor = _isUser ? AppColors.orange : AppColors.lime;
+
+    if (_isVerifyingEmail) {
+      return _buildEmailVerificationScaffold(theme, colorScheme, authService, accentColor);
+    }
 
     return Scaffold(
       body: SafeArea(
@@ -329,6 +324,168 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmailVerificationScaffold(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    AuthService authService,
+    Color accentColor,
+  ) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+
+              // Back button
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back_rounded, color: colorScheme.onSurface),
+                  onPressed: () => setState(() {
+                    _isVerifyingEmail = false;
+                    _otpController.clear();
+                    _resendCooldown = false;
+                  }),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Icon
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.mark_email_unread_rounded, color: accentColor, size: 40),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Title
+              Text(
+                'Verify your email',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: colorScheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'We sent a 6-digit code to\n$_pendingEmail',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 32),
+
+              // OTP input
+              TextField(
+                controller: _otpController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                textAlign: TextAlign.center,
+                autofocus: true,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 10,
+                  color: colorScheme.onSurface,
+                ),
+                decoration: InputDecoration(
+                  hintText: '······',
+                  hintStyle: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 10,
+                    color: colorScheme.onSurface.withValues(alpha: 0.2),
+                  ),
+                  counterText: '',
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerLowest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: accentColor, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                ),
+                onChanged: (val) {
+                  if (val.length == 6) _handleVerifyEmail();
+                },
+              ),
+
+              const SizedBox(height: 24),
+
+              // Verify button
+              if (authService.isLoading)
+                Center(
+                  child: SizedBox(
+                    height: 52,
+                    child: Center(
+                      child: CircularProgressIndicator(color: accentColor, strokeWidth: 3),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: _handleVerifyEmail,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text(
+                      'Verify Email',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              // Resend
+              Center(
+                child: TextButton(
+                  onPressed: _resendCooldown ? null : _handleResendOTP,
+                  child: Text(
+                    _resendCooldown ? 'Resend in 30s' : "Didn't get the code? Resend",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _resendCooldown
+                          ? colorScheme.onSurface.withValues(alpha: 0.35)
+                          : accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

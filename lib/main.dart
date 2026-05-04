@@ -118,16 +118,8 @@ class _MyAppState extends State<MyApp> {
             return svc;
           },
         ),
-        ChangeNotifierProxyProvider<AuthService, PaymentService>(
+        ChangeNotifierProvider<PaymentService>(
           create: (_) => PaymentService(),
-          update: (context, auth, paymentService) {
-            final svc = paymentService ?? PaymentService();
-            final userId = auth.currentUser?.id;
-            if (userId != null) {
-              svc.loadUserPayments(userId);
-            }
-            return svc;
-          },
         ),
         ChangeNotifierProxyProvider<AuthService, WalletService>(
           create: (_) => WalletService(),

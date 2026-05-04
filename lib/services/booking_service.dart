@@ -60,10 +60,11 @@ class BookingService extends ChangeNotifier {
         filters: {'id': bookingId},
       );
       if (data == null) return null;
-      return BookingStatus.values.firstWhere(
-        (e) => e.name == data['status'],
-        orElse: () => BookingStatus.pending,
-      );
+      try {
+        return BookingStatus.values.firstWhere((e) => e.name == data['status']);
+      } on StateError {
+        return null;
+      }
     } catch (e) {
       debugPrint('Failed to fetch booking status: $e');
       return null;
@@ -186,20 +187,6 @@ class BookingService extends ChangeNotifier {
           b.userId == userId &&
           b.activityId == activityId &&
           (b.status == BookingStatus.confirmed || b.status == BookingStatus.completed));
-
-  Future<void> createBooking(BookingModel booking) async {
-    try {
-      final data = Map<String, dynamic>.from(booking.toJson());
-      // Keep the ID if provided, let Supabase generate timestamps
-      data.remove('created_at');
-      data.remove('updated_at');
-      await SupabaseService.insert('bookings', data);
-      await loadUserBookings(booking.userId, force: true);
-    } catch (e) {
-      debugPrint('Failed to create booking: $e');
-      rethrow;
-    }
-  }
 
   Future<void> updateBookingStatus(String bookingId, BookingStatus status) async {
     if (status == BookingStatus.confirmed) {

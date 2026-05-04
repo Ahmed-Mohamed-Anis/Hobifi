@@ -8,6 +8,7 @@ import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/models/user_payment_method_model.dart';
+import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/app_back_button.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
@@ -37,6 +38,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _paymentCompleted = false;
   bool _paymentFailed = false;
   bool _isChecking = false;
+  bool _paymentInitiatedInWebView = false;
+  bool _saveCard = false;
   String? _errorMessage;
   Timer? _pollTimer;
   UserPaymentMethod? _selectedSavedCard;
@@ -105,6 +108,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
     });
   }
 
+  /// Atomically cancel the booking if still pending, release spot, then pop.
+  /// Uses cancel_pending_booking RPC which only cancels if status = 'pending',
+  /// preventing accidental cancellation of a just-confirmed paid booking.
+  Future<void> _cancelAndPop() async {
+    if (_paymentCompleted) return;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+
+    try {
+      await SupabaseConfig.client.rpc('cancel_pending_booking', params: {
+        'p_booking_id': widget.bookingId,
+        'p_activity_id': widget.activityId,
+      });
+    } catch (e) {
+      debugPrint('Failed to cancel booking: $e');
+    }
+
+    if (mounted) context.pop();
+  }
+
   void _showTimeoutDialog() {
     showDialog(
       context: context,
@@ -121,9 +144,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                context.pop();
+                _cancelAndPop();
               },
-              child: const Text('Go to Bookings'),
+              child: const Text('Cancel Booking'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -143,7 +166,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _pay() async {
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() { _isLoading = true; _errorMessage = null; _paymentInitiatedInWebView = false; _pollTimer?.cancel(); _pollTimer = null; });
 
     try {
       final auth = context.read<AuthService>();
@@ -161,6 +184,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         userPhone: user.phone ?? '',
         paymentMethod: _selectedSavedCard != null ? 'saved_card' : 'card',
         cardToken: _selectedSavedCard?.cardToken,
+        saveCard: _selectedSavedCard == null && _saveCard,
       );
 
       if (!mounted) return;
@@ -197,13 +221,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
           final u = request.url.toLowerCase();
-          if (u.contains('success=true') ||
-              (u.contains('is_voided=false') && u.contains('pending=false'))) {
+          // Only intercept the FINAL callback redirect (off Paymob's domains).
+          // Paymob's ACS 3DS redirects also pass through accept.paymob.com URLs
+          // that contain success= — blocking those would prevent the 3DS result
+          // from reaching Paymob and cause the payment to never complete.
+          final isPaymobDomain = u.contains('paymob.com');
+          if (!isPaymobDomain && u.contains('success=true')) {
+            _paymentInitiatedInWebView = true;
             Navigator.of(context).pop();
             _startPolling();
             return NavigationDecision.prevent;
           }
-          if (u.contains('success=false')) {
+          if (!isPaymobDomain && u.contains('success=false')) {
+            _paymentInitiatedInWebView = true;
             Navigator.of(context).pop();
             setState(() {
               _paymentFailed = true;
@@ -258,8 +288,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
 
-    if (mounted && !_paymentCompleted && !_paymentFailed) {
-      _startPolling();
+    if (mounted && !_paymentCompleted && !_paymentFailed && !_paymentInitiatedInWebView) {
+      // User closed WebView without going through the payment flow
+      setState(() => _errorMessage = 'Payment was not completed. Tap Pay to try again.');
     }
   }
 
@@ -370,11 +401,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancelAndPop();
+      },
+      child: Scaffold(
       appBar: AppBar(
         backgroundColor: colorScheme.surface,
         elevation: 0,
-        leading: AppBackButton(onPressed: () => context.pop()),
+        leading: AppBackButton(onPressed: _cancelAndPop),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -454,6 +490,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   _selectedSavedCard =
                                       _selectedSavedCard?.id == card.id ? null : card;
                                 }),
+                                onDelete: () async {
+                                  final userId = context.read<AuthService>().currentUser?.id ?? '';
+                                  final paymentService = context.read<PaymentService>();
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  try {
+                                    await paymentService.deleteSavedCard(card.id, userId);
+                                    if (_selectedSavedCard?.id == card.id) {
+                                      setState(() => _selectedSavedCard = null);
+                                    }
+                                  } catch (e) {
+                                    messenger.showSnackBar(
+                                      SnackBar(content: Text('Could not remove card: $e')),
+                                    );
+                                  }
+                                },
                               )),
                           const SizedBox(height: AppSpacing.md),
                           Divider(color: theme.dividerColor),
@@ -513,6 +564,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   ),
+                  if (_selectedSavedCard == null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    CheckboxListTile(
+                      value: _saveCard,
+                      onChanged: (v) => setState(() => _saveCard = v ?? false),
+                      title: Text('Save card for future payments',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurface,
+                          )),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.xl),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -601,7 +666,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
         ],
       ),
-    );
+      ), // Scaffold
+    ); // PopScope
   }
 }
 
@@ -609,8 +675,14 @@ class _SavedCardTile extends StatelessWidget {
   final UserPaymentMethod card;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
-  const _SavedCardTile({required this.card, required this.isSelected, required this.onTap});
+  const _SavedCardTile({
+    required this.card,
+    required this.isSelected,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -620,7 +692,7 @@ class _SavedCardTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.only(left: 16, top: 10, bottom: 10, right: 4),
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
@@ -631,7 +703,9 @@ class _SavedCardTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.credit_card_rounded, color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5), size: 22),
+            Icon(Icons.credit_card_rounded,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5),
+                size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -642,7 +716,19 @@ class _SavedCardTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (isSelected) Icon(Icons.check_circle_rounded, color: colorScheme.primary, size: 20),
+            if (isSelected)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(Icons.check_circle_rounded, color: colorScheme.primary, size: 20),
+              ),
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded,
+                  size: 20,
+                  color: colorScheme.onSurface.withValues(alpha: 0.35)),
+              onPressed: onDelete,
+              splashRadius: 18,
+              tooltip: 'Remove card',
+            ),
           ],
         ),
       ),

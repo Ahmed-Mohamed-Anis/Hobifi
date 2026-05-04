@@ -425,6 +425,56 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Verify the OTP code sent to email during sign-up
+  Future<Map<String, dynamic>> verifyEmailOTP(String email, String token) async {
+    _isLoading = true;
+    _safeNotify();
+    try {
+      final response = await SupabaseConfig.auth.verifyOTP(
+        email: email,
+        token: token,
+        type: OtpType.signup,
+      );
+      if (response.session == null) {
+        _isLoading = false;
+        _safeNotify();
+        return {'success': false, 'message': 'Invalid or expired verification code.'};
+      }
+      await _loadCurrentUser();
+      _isLoading = false;
+      _safeNotify();
+      return {'success': true};
+    } on AuthException catch (e) {
+      debugPrint('Email OTP verification failed: ${e.message}');
+      _isLoading = false;
+      _safeNotify();
+      String message = 'Invalid verification code.';
+      if (e.message.contains('expired')) {
+        message = 'Code has expired. Please request a new one.';
+      } else if (e.message.contains('already confirmed')) {
+        message = 'Email already verified. Please sign in.';
+      }
+      return {'success': false, 'message': message};
+    } catch (e) {
+      debugPrint('Email OTP verification failed: $e');
+      _isLoading = false;
+      _safeNotify();
+      return {'success': false, 'message': 'Verification failed. Please try again.'};
+    }
+  }
+
+  /// Resend the sign-up OTP code to the given email
+  Future<Map<String, dynamic>> resendSignupOTP(String email) async {
+    try {
+      await SupabaseConfig.auth.resend(type: OtpType.signup, email: email);
+      return {'success': true};
+    } on AuthException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to resend code. Please try again.'};
+    }
+  }
+
   /// Send password reset email with OTP code
   Future<Map<String, dynamic>> sendPasswordResetEmail(String email) async {
     _isLoading = true;
