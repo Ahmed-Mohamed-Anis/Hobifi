@@ -262,11 +262,8 @@ class BookingService extends ChangeNotifier {
       );
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200 && data['success'] == true) {
-        final booking = _bookings.cast<BookingModel?>().firstWhere(
-          (b) => b?.id == bookingId,
-          orElse: () => null,
-        );
-        if (booking != null) await loadUserBookings(booking.userId, force: true);
+        final businessId = SupabaseConfig.auth.currentUser?.id;
+        if (businessId != null) await loadBusinessBookings(businessId);
         return {'success': true};
       }
       return {'success': false, 'error': data['error'] ?? 'Cancellation failed'};
