@@ -33,6 +33,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
   final _locationController = TextEditingController();
   final _priceController = TextEditingController();
   final _maxGuestsController = TextEditingController();
+  final _cancellationHoursController = TextEditingController();
 
   String _selectedCategory = 'Art';
   bool _isInstantBooking = true;
@@ -104,6 +105,8 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     final end = model.endAt ?? model.dateTime.add(const Duration(hours: 2));
     _startTime = TimeOfDay(hour: start.hour, minute: start.minute);
     _endTime = TimeOfDay(hour: end.hour, minute: end.minute);
+
+    _cancellationHoursController.text = (model.cancellationHours).toString();
 
     _primaryImageUrl = model.imageUrl;
     _gallery
@@ -202,6 +205,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     _locationController.dispose();
     _priceController.dispose();
     _maxGuestsController.dispose();
+    _cancellationHoursController.dispose();
     super.dispose();
   }
 
@@ -373,6 +377,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         isPublic: _isPublic,
         imageUrl: _primaryImageUrl ?? _activity!.imageUrl,
         imageUrls: List<String>.from(_gallery),
+        cancellationHours: int.tryParse(_cancellationHoursController.text) ?? 24,
         updatedAt: DateTime.now(),
       );
 
@@ -712,6 +717,17 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                         ),
                       ),
                     ]),
+
+                    const SizedBox(height: AppSpacing.md),
+
+                    TextField(
+                      controller: _cancellationHoursController,
+                      decoration: const InputDecoration(
+                        labelText: 'Cancellation window (hours)',
+                        prefixIcon: Icon(Icons.cancel_schedule_send_rounded),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
 
                     const SizedBox(height: AppSpacing.lg),
 
