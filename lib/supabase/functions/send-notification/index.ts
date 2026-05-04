@@ -58,6 +58,16 @@ async function getAccessToken(serviceAccount: any): Promise<string> {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  // Verify caller is service-role (internal calls only)
+  const authHeader = req.headers.get('Authorization')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!authHeader || authHeader !== `Bearer ${serviceRoleKey}`) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   const serviceAccountJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON')
   if (!serviceAccountJson) {
     return new Response(JSON.stringify({ success: true, skipped: 'Firebase not configured' }), {
