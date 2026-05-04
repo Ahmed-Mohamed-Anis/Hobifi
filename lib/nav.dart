@@ -491,22 +491,23 @@ class _OfflineBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOnline = context.watch<ConnectivityService>().isOnline;
     if (isOnline) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.black87,
+      color: colorScheme.inverseSurface,
       child: SafeArea(
         bottom: false,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 6),
-          color: Colors.black87,
+          color: colorScheme.inverseSurface,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.wifi_off_rounded, color: Colors.white70, size: 14),
+              Icon(Icons.wifi_off_rounded, color: colorScheme.onInverseSurface, size: 14),
               const SizedBox(width: 6),
               Text(
                 'No internet connection',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onInverseSurface),
               ),
             ],
           ),

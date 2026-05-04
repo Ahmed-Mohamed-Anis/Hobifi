@@ -13,15 +13,19 @@ class ConnectivityService extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    final results = await Connectivity().checkConnectivity();
-    _isOnline = _hasConnection(results);
-    _sub = Connectivity().onConnectivityChanged.listen((results) {
-      final online = _hasConnection(results);
-      if (online != _isOnline) {
-        _isOnline = online;
-        notifyListeners();
-      }
-    });
+    try {
+      final results = await Connectivity().checkConnectivity();
+      _isOnline = _hasConnection(results);
+      _sub = Connectivity().onConnectivityChanged.listen((results) {
+        final online = _hasConnection(results);
+        if (online != _isOnline) {
+          _isOnline = online;
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint('ConnectivityService init failed: $e');
+    }
   }
 
   bool _hasConnection(List<ConnectivityResult> results) =>

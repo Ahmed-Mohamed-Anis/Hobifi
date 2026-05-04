@@ -53,7 +53,7 @@ class PushNotificationService {
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
-      final platform = Platform.isAndroid ? 'android' : 'ios';
+      final platform = kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'ios');
       await SupabaseConfig.client.from('device_tokens').upsert({
         'user_id': userId,
         'token': token,

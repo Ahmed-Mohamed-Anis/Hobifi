@@ -14,7 +14,7 @@ create policy "Users can report reviews"
   to authenticated
   with check (reporter_id = auth.uid());
 
-create policy "Admins can view reports"
+create policy "Users can read own reports"
   on review_reports for select
   to authenticated
   using (reporter_id = auth.uid());
