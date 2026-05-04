@@ -316,7 +316,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateProfile({String? name, String? avatarUrl, String? bio, List<String>? interests, String? city}) async {
+  Future<bool> updateProfile({String? name, String? avatarUrl, String? bio, List<String>? interests, String? city, String? phone}) async {
     if (_currentUser == null) return false;
 
     try {
@@ -326,6 +326,7 @@ class AuthService extends ChangeNotifier {
       if (bio != null) updates['bio'] = bio;
       if (interests != null) updates['interests'] = interests;
       if (city != null) updates['city'] = city;
+      if (phone != null) updates['phone'] = phone;
 
       if (updates.isEmpty) return false;
 
