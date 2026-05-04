@@ -301,6 +301,44 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     return null;
   }
 
+  Future<void> _confirmCancelBooking(BuildContext context, BookingModel booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel booking?'),
+        content: const Text('The guest will be notified and refunded. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancel booking', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final bookingService = context.read<BookingService>();
+    final result = await bookingService.cancelBookingBusiness(booking.id);
+    if (!context.mounted) return;
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Booking cancelled')),
+      );
+      if (mounted) {
+        setState(() {
+          _attendeeBookings.removeWhere((b) => b.id == booking.id);
+        });
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error']?.toString() ?? 'Failed to cancel booking')),
+      );
+    }
+  }
+
   Future<void> _confirmMarkAttended(BuildContext context, BookingModel booking) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -608,9 +646,20 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                                           ),
                                         ),
                                       )
-                                    : TextButton(
-                                        onPressed: () => _confirmMarkAttended(context, booking),
-                                        child: const Text('Mark attended'),
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (booking.status == BookingStatus.confirmed)
+                                            IconButton(
+                                              icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                                              tooltip: 'Cancel booking',
+                                              onPressed: () => _confirmCancelBooking(context, booking),
+                                            ),
+                                          TextButton(
+                                            onPressed: () => _confirmMarkAttended(context, booking),
+                                            child: const Text('Mark attended'),
+                                          ),
+                                        ],
                                       ),
                               ],
                             ),
