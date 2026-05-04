@@ -130,7 +130,7 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
                       SharePlus.instance.share(
                         ShareParams(
                           text:
-                              'Check out "${activity.title}" on HOBIFI!\n${activity.location} — EGP ${activity.price.toStringAsFixed(0)}/person',
+                              'Check out ${activity.title} on Hobifi!\nhobifi://activity/${activity.id}',
                         ),
                       );
                     },
@@ -949,10 +949,135 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
           const SizedBox(height: 12),
           ...reviewsWithComments
               .take(5)
-              .map((review) => _ReviewCard(review: review)),
+              .map((review) => _ReviewCard(
+                    review: review,
+                    onReport: () => _showReportDialog(context, review.id),
+                  )),
         ],
       ],
     );
+  }
+
+  Future<void> _showReportDialog(BuildContext context, String reviewId) async {
+    final reasonController = TextEditingController();
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final messenger = ScaffoldMessenger.of(context);
+    final ratingService = context.read<RatingService>();
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            24 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Report Review',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please describe why you are reporting this review.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                maxLines: 3,
+                maxLength: 300,
+                decoration: InputDecoration(
+                  hintText: 'Enter reason...',
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                  filled: true,
+                  fillColor: colorScheme.primary.withValues(alpha: 0.04),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: colorScheme.outline.withValues(alpha: 0.2)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: colorScheme.outline.withValues(alpha: 0.2)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        BorderSide(color: colorScheme.primary, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.all(14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Submit'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      final reason = reasonController.text.trim();
+      try {
+        await ratingService.reportReview(reviewId, reason);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Review reported. Thank you.')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Failed to report review.')),
+        );
+      }
+    }
+
+    reasonController.dispose();
   }
 
   Future<void> _submitReview(String userId) async {
@@ -995,7 +1120,9 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
 
 class _ReviewCard extends StatelessWidget {
   final RatingModel review;
-  const _ReviewCard({required this.review});
+  final VoidCallback? onReport;
+
+  const _ReviewCard({required this.review, this.onReport});
 
   @override
   Widget build(BuildContext context) {
@@ -1033,6 +1160,21 @@ class _ReviewCard extends StatelessWidget {
                 timeAgo,
                 style: theme.textTheme.labelSmall?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.5)),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 16,
+                  tooltip: 'Report review',
+                  icon: Icon(
+                    Icons.flag_outlined,
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                  onPressed: onReport,
+                ),
               ),
             ],
           ),

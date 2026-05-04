@@ -21,19 +21,45 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _changingPhoto = false;
+  bool _editingPhone = false;
+  bool _savingPhone = false;
+  late TextEditingController _phoneController;
 
   @override
   void initState() {
     super.initState();
+    _phoneController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthService>();
       final bookings = context.read<BookingService>();
       if (auth.currentUser != null) {
+        _phoneController.text = auth.currentUser!.phone ?? '';
         bookings.loadUserBookings(auth.currentUser!.id);
         context.read<LikeService>().loadLikes(auth.currentUser!.id);
         context.read<RatingService>().loadUserRatings(auth.currentUser!.id);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePhone() async {
+    final auth = context.read<AuthService>();
+    setState(() => _savingPhone = true);
+    final ok = await auth.updateProfile(phone: _phoneController.text.trim());
+    if (mounted) {
+      setState(() {
+        _savingPhone = false;
+        _editingPhone = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Phone number updated' : 'Failed to update phone number')),
+      );
+    }
   }
 
   Future<void> _pickAndUploadAvatar() async {
@@ -278,6 +304,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
+                    // Phone number edit
+                    if (_editingPhone)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number',
+                              hintText: '+201000000000',
+                              prefixIcon: const Icon(Icons.phone_rounded),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: _savingPhone
+                                    ? null
+                                    : () => setState(() {
+                                          _editingPhone = false;
+                                          _phoneController.text = user?.phone ?? '';
+                                        }),
+                                child: const Text('Cancel'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                onPressed: _savingPhone ? null : _savePhone,
+                                child: _savingPhone
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Text('Save'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      )
+                    else
+                      _SettingsRow(
+                        icon: Icons.phone_rounded,
+                        title: 'Phone Number',
+                        subtitle: (user?.phone != null && user!.phone!.isNotEmpty)
+                            ? user.phone!
+                            : 'Tap to add a phone number',
+                        onTap: () => setState(() => _editingPhone = true),
+                      ),
+                    const SizedBox(height: 12),
                     // Booking History
                     _SettingsRow(
                       icon: Icons.history_rounded,

@@ -31,6 +31,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   double? _activityLng;
   final _priceController = TextEditingController();
   final _maxGuestsController = TextEditingController();
+  final _cancellationHoursController = TextEditingController(text: '24');
   String _selectedCategory = 'Art';
   bool _isInstantBooking = true;
   bool _isPublic = true;
@@ -174,6 +175,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     _locationController.dispose();
     _priceController.dispose();
     _maxGuestsController.dispose();
+    _cancellationHoursController.dispose();
     super.dispose();
   }
 
@@ -231,6 +233,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       features: _selectedTags.toList(),
       latitude: _activityLat,
       longitude: _activityLng,
+      cancellationHours: int.tryParse(_cancellationHoursController.text) ?? 24,
       createdAt: now,
       updatedAt: now,
     );
@@ -318,6 +321,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           features: _selectedTags.toList(),
           latitude: _activityLat,
           longitude: _activityLng,
+          cancellationHours: int.tryParse(_cancellationHoursController.text) ?? 24,
           createdAt: now,
           updatedAt: now,
         );
@@ -565,6 +569,16 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FormLabel(label: 'Cancellation window (hours)'),
+                    TextField(
+                      controller: _cancellationHoursController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        hintText: '24',
+                        prefixIcon: Icon(Icons.cancel_schedule_send_rounded),
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     FormLabel(label: 'Schedule'),

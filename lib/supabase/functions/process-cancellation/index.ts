@@ -59,11 +59,20 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check 24-hour cancellation policy
+    // Fetch activity to read per-activity cancellation policy
+    const { data: activity } = await supabase
+      .from("activities")
+      .select("cancellation_hours")
+      .eq("id", booking.activity_id)
+      .single();
+
+    const cancellationHours = activity?.cancellation_hours ?? 24;
+
+    // Check cancellation window using per-activity policy
     const activityDate = new Date(booking.date_time);
     const now = new Date();
     const hoursUntil = (activityDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-    const isRefundEligible = hoursUntil >= 24;
+    const isRefundEligible = hoursUntil >= cancellationHours;
 
     // Cancel the booking
     const { error: cancelError } = await supabase
@@ -127,6 +136,21 @@ serve(async (req: Request) => {
       }
     }
 
+    // Notify user of cancellation (fire-and-forget)
+    fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        user_ids: [user.id],
+        title: "Booking Cancelled",
+        body: "Your booking has been cancelled.",
+        type: "booking_cancelled",
+      }),
+    }).catch((e) => console.error("Failed to send cancellation notification:", e));
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -134,7 +158,7 @@ serve(async (req: Request) => {
         refund_status: refundStatus,
         message: isRefundEligible
           ? "Booking cancelled. Refund has been requested and will be processed."
-          : "Booking cancelled. No refund — cancellation was less than 24 hours before the activity.",
+          : `Booking cancelled. No refund — cancellation was less than ${cancellationHours} hours before the activity.`,
       }),
       { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );

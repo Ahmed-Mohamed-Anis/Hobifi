@@ -91,7 +91,6 @@ class BookingService extends ChangeNotifier {
       await _autoCompleteExpiredBookings();
     } catch (e) {
       debugPrint('Failed to load bookings: $e');
-      _bookings = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -169,7 +168,6 @@ class BookingService extends ChangeNotifier {
           .toList();
     } catch (e) {
       debugPrint('Failed to load business bookings: $e');
-      _businessBookings = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -255,6 +253,37 @@ class BookingService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Failed to cancel booking: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Business cancels a confirmed booking from their side.
+  Future<Map<String, dynamic>> cancelBookingBusiness(String bookingId) async {
+    final token = SupabaseConfig.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) {
+      return {'success': false, 'error': 'Session expired. Please sign in again.'};
+    }
+    try {
+      final response = await http.post(
+        Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/process-cancellation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+          'apikey': SupabaseConfig.anonKey,
+        },
+        body: jsonEncode({'booking_id': bookingId, 'cancelled_by': 'business'}),
+      );
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final booking = _bookings.cast<BookingModel?>().firstWhere(
+          (b) => b?.id == bookingId,
+          orElse: () => null,
+        );
+        if (booking != null) await loadUserBookings(booking.userId, force: true);
+        return {'success': true};
+      }
+      return {'success': false, 'error': data['error'] ?? 'Cancellation failed'};
+    } catch (e) {
       return {'success': false, 'error': e.toString()};
     }
   }

@@ -34,7 +34,6 @@ class ActivityService extends ChangeNotifier {
       _hasMore = data.length >= _pageSize;
     } catch (e) {
       debugPrint('Failed to load activities: $e');
-      _activities = [];
     } finally {
       _isLoading = false;
       notifyListeners();

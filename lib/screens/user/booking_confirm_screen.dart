@@ -245,27 +245,35 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
                     const SizedBox(height: 16),
 
                     // Cancellation policy
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Free cancellation up to 24 hours before the activity',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.primary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                    Builder(
+                      builder: (context) {
+                        final hours = activity.cancellationHours;
+                        final policyText = hours == 0
+                            ? 'Non-refundable'
+                            : 'Cancel up to $hours hour${hours == 1 ? '' : 's'} before for a full refund';
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.primary),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  policyText,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

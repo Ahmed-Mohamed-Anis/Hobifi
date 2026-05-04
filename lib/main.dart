@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/screens/splash_screen.dart';
@@ -14,6 +15,8 @@ import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/services/wallet_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
 import 'package:hobby_haven/services/location_service.dart';
+import 'package:hobby_haven/services/connectivity_service.dart';
+import 'package:hobby_haven/services/push_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +36,13 @@ void main() async {
   
   // Initialize Supabase
   await SupabaseConfig.initialize();
-  
+
+  // Initialize Firebase and push notifications
+  try {
+    await Firebase.initializeApp();
+    await PushNotificationService.initialize();
+  } catch (_) {}
+
   runApp(const MyApp());
 }
 
@@ -70,6 +79,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ConnectivityService()),
         ChangeNotifierProvider(create: (_) => ThemeService()..initialize()),
         ChangeNotifierProvider(create: (_) => AuthService()..initialize()),
         ChangeNotifierProvider(create: (_) => ActivityService()..initialize()),

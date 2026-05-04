@@ -181,6 +181,23 @@ serve(async (req: Request) => {
       );
     }
 
+    // Notify user of booking confirmation (fire-and-forget)
+    if (isSuccess && paymentData.user_id) {
+      fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          user_ids: [paymentData.user_id],
+          title: "Booking Confirmed!",
+          body: "Your booking has been confirmed. See you there!",
+          type: "booking_confirmed",
+        }),
+      }).catch((e) => console.error("Failed to send booking confirmation notification:", e));
+    }
+
     // Release spot on failure
     if (!isSuccess && !isPending) {
       const { error: releaseError } = await supabase.rpc("release_spot", {
@@ -194,6 +211,23 @@ serve(async (req: Request) => {
         );
       }
       console.log("Released spot for failed payment:", paymentData.booking_id);
+
+      // Notify user of payment failure (fire-and-forget)
+      if (paymentData.user_id) {
+        fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            user_ids: [paymentData.user_id],
+            title: "Payment Failed",
+            body: "Your payment could not be processed. Please try again.",
+            type: "payment_failed",
+          }),
+        }).catch((e) => console.error("Failed to send payment failure notification:", e));
+      }
     }
 
     // Save card token on success (if Paymob returned one)

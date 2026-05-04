@@ -156,9 +156,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
         activityId: widget.activityId,
         amount: widget.amount,
         activityTitle: widget.activityTitle,
-        userEmail: user.email ?? '',
-        userName: user.name ?? '',
-        userPhone: '',
+        userEmail: user.email,
+        userName: user.name,
+        userPhone: user.phone ?? '',
         paymentMethod: _selectedSavedCard != null ? 'saved_card' : 'card',
         cardToken: _selectedSavedCard?.cardToken,
       );
