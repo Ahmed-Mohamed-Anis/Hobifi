@@ -159,6 +159,10 @@ class RatingService extends ChangeNotifier {
 
   Future<Map<String, dynamic>> reportReview(String reviewId, String reason) async {
     try {
+      if (reason.trim().isEmpty) {
+        return {'success': false, 'error': 'Reason cannot be empty'};
+      }
+
       final userId = SupabaseConfig.auth.currentUser?.id;
       if (userId == null) return {'success': false, 'error': 'Not authenticated'};
       await SupabaseService.insert('review_reports', {

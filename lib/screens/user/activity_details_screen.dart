@@ -1065,6 +1065,15 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
 
     if (confirmed == true && mounted) {
       final reason = reasonController.text.trim();
+
+      if (reason.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Please enter a reason for reporting.')),
+        );
+        reasonController.dispose();
+        return;
+      }
+
       try {
         await ratingService.reportReview(reviewId, reason);
         messenger.showSnackBar(
