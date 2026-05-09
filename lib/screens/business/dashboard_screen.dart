@@ -7,6 +7,7 @@ import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/wallet_service.dart';
+import 'package:hobby_haven/models/activity_model.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hobby_haven/nav.dart';
@@ -402,11 +403,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  List<dynamic> _sortedActivities(
-    List activities,
+  static const _sortOptions = [
+    ('revenue', 'Revenue'),
+    ('bookings', 'Bookings'),
+    ('fillRate', 'Fill Rate'),
+  ];
+
+  List<ActivityModel> _sortedActivities(
+    List<ActivityModel> activities,
     Map<String, _PerActivityStats> agg,
   ) {
-    final sorted = List.from(activities);
+    final sorted = List<ActivityModel>.from(activities);
     switch (_activitySortBy) {
       case 'revenue':
         sorted.sort((a, b) =>
@@ -415,9 +422,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         sorted.sort((a, b) =>
             (agg[b.id]?.bookings ?? 0).compareTo(agg[a.id]?.bookings ?? 0));
       case 'fillRate':
-        double rate(a) =>
-            a.maxGuests > 0 ? (a.maxGuests - a.spotsLeft) / a.maxGuests : 0.0;
-        sorted.sort((a, b) => rate(b).compareTo(rate(a)));
+        sorted.sort((a, b) {
+          double rate(ActivityModel x) =>
+              x.maxGuests > 0 ? (x.maxGuests - x.spotsLeft) / x.maxGuests : 0.0;
+          return rate(b).compareTo(rate(a));
+        });
     }
     return sorted;
   }
@@ -459,7 +468,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _initDashboard(userId);
     }
 
-    final businessActivities = userId == null
+    final List<ActivityModel> businessActivities = userId == null
         ? const []
         : activityService.getActivitiesByBusinessId(userId);
 
@@ -1009,17 +1018,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                       child: Row(
                         children: [
-                          for (final entry in {
-                            'revenue': 'Revenue',
-                            'bookings': 'Bookings',
-                            'fillRate': 'Fill Rate',
-                          }.entries)
+                          for (final (key, label) in _sortOptions)
                             Padding(
                               padding: const EdgeInsets.only(right: 8),
                               child: HobifiChip(
-                                label: entry.value,
-                                isSelected: _activitySortBy == entry.key,
-                                onTap: () => setState(() => _activitySortBy = entry.key),
+                                label: label,
+                                isSelected: _activitySortBy == key,
+                                onTap: () => setState(() => _activitySortBy = key),
                               ),
                             ),
                         ],
@@ -1450,7 +1455,7 @@ class _EarningsRow extends StatelessWidget {
 
 class _ActivityBreakdownCard extends StatelessWidget {
   final String title;
-  final String? imageUrl;
+  final String imageUrl;
   final int bookings;
   final double revenue;
   final double fillRate;
@@ -1459,7 +1464,7 @@ class _ActivityBreakdownCard extends StatelessWidget {
 
   const _ActivityBreakdownCard({
     required this.title,
-    this.imageUrl,
+    required this.imageUrl,
     required this.bookings,
     required this.revenue,
     required this.fillRate,
@@ -1496,21 +1501,20 @@ class _ActivityBreakdownCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (imageUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl!,
-                      width: 52, height: 52, fit: BoxFit.cover,
-                      placeholder: (_, __) => HobifiShimmer.box(52, 52),
-                      errorWidget: (_, __, ___) => Container(
-                        width: 52, height: 52,
-                        color: colorScheme.surfaceContainerHighest,
-                        child: Icon(Icons.image_rounded, color: colorScheme.outline, size: 20),
-                      ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: 52, height: 52, fit: BoxFit.cover,
+                    placeholder: (_, __) => HobifiShimmer.box(52, 52),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 52, height: 52,
+                      color: colorScheme.surfaceContainerHighest,
+                      child: Icon(Icons.image_rounded, color: colorScheme.outline, size: 20),
                     ),
                   ),
-                if (imageUrl != null) const SizedBox(width: 12),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
