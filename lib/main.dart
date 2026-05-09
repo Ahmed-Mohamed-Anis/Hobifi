@@ -17,6 +17,7 @@ import 'package:hobby_haven/services/theme_service.dart';
 import 'package:hobby_haven/services/location_service.dart';
 import 'package:hobby_haven/services/connectivity_service.dart';
 import 'package:hobby_haven/services/push_notification_service.dart';
+import 'package:hobby_haven/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -129,6 +130,17 @@ class _MyAppState extends State<MyApp> {
             // Only load wallet for business users
             if (user != null && user.role.name == 'business') {
               svc.loadWallet(user.id);
+            }
+            return svc;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthService, NotificationService>(
+          create: (_) => NotificationService(),
+          update: (context, auth, notifService) {
+            final svc = notifService ?? NotificationService();
+            final user = auth.currentUser;
+            if (user != null && user.role.name == 'business') {
+              svc.loadNotifications(user.id);
             }
             return svc;
           },

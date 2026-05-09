@@ -145,6 +145,16 @@ serve(async (req) => {
       await supabase.from('device_tokens').delete().in('id', staleTokenIds)
     }
 
+    // Write to in-app notifications inbox (fire-and-forget; errors are non-fatal)
+    if (title && body && resolvedUserIds.length) {
+      supabase
+        .from('notifications')
+        .insert(resolvedUserIds.map((uid: string) => ({ user_id: uid, title, body })))
+        .then(({ error }: { error: any }) => {
+          if (error) console.error('Failed to insert notifications:', error)
+        })
+    }
+
     return new Response(JSON.stringify({ success: true, sent: tokens.length - staleTokenIds.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

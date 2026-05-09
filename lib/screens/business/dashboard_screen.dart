@@ -17,6 +17,7 @@ import 'package:hobby_haven/widgets/hobifi_stat_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
+import 'package:hobby_haven/services/notification_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -589,6 +590,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bookingService = context.watch<BookingService>();
     final walletService = context.watch<WalletService>();
     final authService = context.watch<AuthService>();
+    final notifService = context.watch<NotificationService>();
     final user = authService.currentUser;
     final userId = user?.id;
 
@@ -648,6 +650,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
+                      // Bell icon with badge
+                      if (userId != null)
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            IconButton(
+                              onPressed: () => _showNotificationsSheet(context, notifService, userId),
+                              style: IconButton.styleFrom(
+                                backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                              ),
+                              icon: Icon(Icons.notifications_outlined, color: colorScheme.primary),
+                            ),
+                            if (notifService.unreadCount > 0)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      notifService.unreadCount > 9 ? '9+' : '${notifService.unreadCount}',
+                                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (userId != null) const SizedBox(width: 8),
                       // Wallet button
                       IconButton(
                         onPressed: () =>
@@ -1364,6 +1400,132 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showNotificationsSheet(
+    BuildContext context,
+    NotificationService notifService,
+    String userId,
+  ) {
+    notifService.markAllRead(userId);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.35,
+        expand: false,
+        builder: (ctx, sc) {
+          final notifications = notifService.notifications;
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                child: Row(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: colorScheme.outline.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text('Notifications',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    const SizedBox(width: 40),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: notifications.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.notifications_off_outlined,
+                                size: 48, color: Colors.grey),
+                            SizedBox(height: 12),
+                            Text('No notifications yet',
+                                style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: sc,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: notifications.length,
+                        itemBuilder: (_, i) {
+                          final n = notifications[i];
+                          final isUnread = !n.read;
+                          final now = DateTime.now();
+                          final diff = now.difference(n.createdAt);
+                          final timeLabel = diff.inDays == 0
+                              ? 'Today'
+                              : diff.inDays == 1
+                                  ? 'Yesterday'
+                                  : '${diff.inDays} days ago';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border(
+                                left: BorderSide(
+                                  color: isUnread
+                                      ? colorScheme.primary
+                                      : Colors.transparent,
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(n.title,
+                                          style: theme.textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.bold)),
+                                      ),
+                                      Text(timeLabel,
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.4))),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(n.body,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurface.withValues(alpha: 0.6))),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
