@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/activity_service.dart';
@@ -37,11 +38,17 @@ class _FeedScreenState extends State<FeedScreen> {
   Timer? _debounce;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  List<String> _searchHistory = [];
+  bool _searchFocused = false;
+
+  static const _historyKey = 'search_history';
+  static const _suggestions = ['Pottery', 'Yoga', 'Cooking class', 'Photography'];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _loadSearchHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthService>();
       if (auth.currentUser != null) {
@@ -181,6 +188,27 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
+  Future<void> _loadSearchHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _searchHistory = prefs.getStringList(_historyKey) ?? []);
+  }
+
+  Future<void> _saveSearchTerm(String term) async {
+    final trimmed = term.trim();
+    if (trimmed.isEmpty) return;
+    final updated = [trimmed, ..._searchHistory.where((t) => t != trimmed)].take(5).toList();
+    setState(() => _searchHistory = updated);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_historyKey, updated);
+  }
+
+  Future<void> _removeSearchTerm(String term) async {
+    final updated = _searchHistory.where((t) => t != term).toList();
+    setState(() => _searchHistory = updated);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_historyKey, updated);
+  }
+
   void _selectCategory(String category) {
     setState(() => _selectedCategory = category);
     if (_searchQuery.trim().isNotEmpty) {
@@ -258,9 +286,17 @@ class _FeedScreenState extends State<FeedScreen> {
                       _searchController.clear();
                       _onSearchChanged('');
                     },
+                    onFocusChange: (focused) => setState(() => _searchFocused = focused),
+                    onSubmitted: (term) {
+                      if (term.trim().isNotEmpty) _saveSearchTerm(term.trim());
+                    },
                   ),
                 ),
               ),
+
+              // 2b. Search history / suggestion chips
+              if (_searchFocused && _searchQuery.isEmpty)
+                SliverToBoxAdapter(child: _buildSearchChips()),
 
               // 3. Category chips using HobifiChip
               SliverToBoxAdapter(
@@ -347,6 +383,53 @@ class _FeedScreenState extends State<FeedScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSearchChips() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final chips = _searchHistory.isNotEmpty ? _searchHistory : _suggestions;
+    final label = _searchHistory.isNotEmpty ? 'Recent' : 'Popular';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: chips.map((term) {
+              return InputChip(
+                label: Text(term),
+                onPressed: () {
+                  _searchController.text = term;
+                  _onSearchChanged(term);
+                  _saveSearchTerm(term);
+                },
+                onDeleted: _searchHistory.isNotEmpty ? () => _removeSearchTerm(term) : null,
+                deleteIcon: _searchHistory.isNotEmpty
+                    ? Icon(Icons.close_rounded,
+                        size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5))
+                    : null,
+                backgroundColor: colorScheme.surface,
+                side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                labelStyle: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

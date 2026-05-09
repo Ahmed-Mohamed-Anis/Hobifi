@@ -5,12 +5,16 @@ class HobifiSearchBar extends StatefulWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
+  final ValueChanged<bool>? onFocusChange;
+  final ValueChanged<String>? onSubmitted;
 
   const HobifiSearchBar({
     super.key,
     required this.controller,
     required this.onChanged,
     required this.onClear,
+    this.onFocusChange,
+    this.onSubmitted,
   });
 
   @override
@@ -24,7 +28,10 @@ class _HobifiSearchBarState extends State<HobifiSearchBar> {
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(() => setState(() => _isFocused = _focusNode.hasFocus));
+    _focusNode.addListener(() {
+      setState(() => _isFocused = _focusNode.hasFocus);
+      widget.onFocusChange?.call(_focusNode.hasFocus);
+    });
   }
 
   @override
@@ -63,6 +70,7 @@ class _HobifiSearchBarState extends State<HobifiSearchBar> {
         controller: widget.controller,
         focusNode: _focusNode,
         onChanged: widget.onChanged,
+        onSubmitted: widget.onSubmitted,
         style: TextStyle(color: colorScheme.onSurface, fontSize: 15),
         decoration: InputDecoration(
           hintText: 'Search experiences...',
