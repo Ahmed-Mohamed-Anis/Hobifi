@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
+import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 
@@ -107,10 +108,16 @@ class _BusinessBookingsScreenState extends State<BusinessBookingsScreen>
                       final bookingSvc = context.read<BookingService>();
                       final authSvc = context.read<AuthService>();
                       Navigator.of(ctx).pop();
-                      await bookingSvc.cancelBookingBusiness(booking.id);
+                      final result = await bookingSvc.cancelBookingBusiness(booking.id);
+                      if (result['success'] != true && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result['error'] as String? ?? 'Cancellation failed')),
+                        );
+                        return;
+                      }
                       final userId = authSvc.currentUser?.id;
                       if (userId != null) {
-                        bookingSvc.loadBusinessBookingsAll(userId);
+                        await bookingSvc.loadBusinessBookingsAll(userId);
                       }
                     },
                     style: OutlinedButton.styleFrom(
@@ -161,7 +168,7 @@ class _BusinessBookingsScreenState extends State<BusinessBookingsScreen>
                 if (items.isEmpty) {
                   return HobifiEmptyState(
                     icon: Icons.event_busy_rounded,
-                    title: 'No ${_statusFilters[i]?.name ?? ''} bookings',
+                    title: _statusFilters[i] == null ? 'No bookings yet' : 'No ${_statusFilters[i]!.name} bookings',
                     subtitle: _statusFilters[i] == null
                         ? 'Bookings appear here after guests book your activities.'
                         : null,
@@ -203,9 +210,9 @@ class _BookingRow extends StatelessWidget {
 
     final statusColor = switch (booking.status) {
       BookingStatus.confirmed => colorScheme.primary,
-      BookingStatus.completed => const Color(0xFF9BC53D),
+      BookingStatus.completed => AppColors.lime,
       BookingStatus.cancelled => colorScheme.error,
-      BookingStatus.pending => const Color(0xFFE88B3C),
+      BookingStatus.pending => AppColors.orange,
     };
 
     return Material(
