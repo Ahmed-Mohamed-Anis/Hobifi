@@ -18,6 +18,7 @@ import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
 import 'package:hobby_haven/services/notification_service.dart';
+import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -676,7 +677,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   child: Center(
                                     child: Text(
                                       notifService.unreadCount > 9 ? '9+' : '${notifService.unreadCount}',
-                                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                      style: TextStyle(color: colorScheme.onError, fontSize: 9, fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                 ),
@@ -1452,17 +1453,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               Expanded(
                 child: notifications.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.notifications_off_outlined,
-                                size: 48, color: Colors.grey),
-                            SizedBox(height: 12),
-                            Text('No notifications yet',
-                                style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
+                    ? HobifiEmptyState(
+                        icon: Icons.notifications_off_outlined,
+                        title: 'No notifications yet',
                       )
                     : ListView.builder(
                         controller: sc,
