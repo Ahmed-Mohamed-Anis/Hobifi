@@ -38,8 +38,10 @@ class _FeedScreenState extends State<FeedScreen> {
   Timer? _debounce;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late final FocusNode _searchFocusNode;
   List<String> _searchHistory = [];
   bool _searchFocused = false;
+  SharedPreferences? _prefs;
 
   static const _historyKey = 'search_history';
   static const _suggestions = ['Pottery', 'Yoga', 'Cooking class', 'Photography'];
@@ -47,6 +49,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
     _loadSearchHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -189,8 +192,9 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _loadSearchHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _searchHistory = prefs.getStringList(_historyKey) ?? []);
+    _prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _searchHistory = _prefs!.getStringList(_historyKey) ?? []);
   }
 
   Future<void> _saveSearchTerm(String term) async {
@@ -198,15 +202,15 @@ class _FeedScreenState extends State<FeedScreen> {
     if (trimmed.isEmpty) return;
     final updated = [trimmed, ..._searchHistory.where((t) => t != trimmed)].take(5).toList();
     setState(() => _searchHistory = updated);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_historyKey, updated);
+    if (_prefs == null) await _loadSearchHistory();
+    await _prefs!.setStringList(_historyKey, updated);
   }
 
   Future<void> _removeSearchTerm(String term) async {
     final updated = _searchHistory.where((t) => t != term).toList();
     setState(() => _searchHistory = updated);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_historyKey, updated);
+    if (_prefs == null) await _loadSearchHistory();
+    await _prefs!.setStringList(_historyKey, updated);
   }
 
   void _selectCategory(String category) {
@@ -231,6 +235,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _debounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -281,6 +286,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                   child: HobifiSearchBar(
                     controller: _searchController,
+                    focusNode: _searchFocusNode,
                     onChanged: _onSearchChanged,
                     onClear: () {
                       _searchController.clear();
@@ -389,50 +395,23 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildSearchChips() {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final chips = _searchHistory.isNotEmpty ? _searchHistory : _suggestions;
-    final label = _searchHistory.isNotEmpty ? 'Recent' : 'Popular';
+    final bool isHistory = _searchHistory.isNotEmpty;
+    final chips = isHistory ? _searchHistory : _suggestions;
+    final label = isHistory ? 'Recent' : 'Popular';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colorScheme.onSurface.withValues(alpha: 0.5),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: Row(
-            children: chips.map((term) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: InputChip(
-                label: Text(term),
-                onPressed: () {
-                  _searchController.text = term;
-                  _onSearchChanged(term);
-                  _saveSearchTerm(term);
-                },
-                onDeleted: _searchHistory.isNotEmpty ? () => _removeSearchTerm(term) : null,
-                deleteIcon: _searchHistory.isNotEmpty
-                    ? Icon(Icons.close_rounded,
-                        size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5))
-                    : null,
-                backgroundColor: colorScheme.surface,
-                side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
-                labelStyle: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-              ),
-            )).toList(),
-          ),
-        ),
-      ],
+    return _SearchChipsRow(
+      chips: chips,
+      label: label,
+      isHistory: isHistory,
+      onChipTap: (term) {
+        _searchController.text = term;
+        _onSearchChanged(term);
+        _saveSearchTerm(term);
+        _searchFocusNode.unfocus();
+      },
+      onChipDelete: isHistory ? _removeSearchTerm : null,
+      colorScheme: theme.colorScheme,
+      textTheme: theme.textTheme,
     );
   }
 
@@ -635,6 +614,72 @@ class _FeedScreenState extends State<FeedScreen> {
           },
           childCount: activities.length,
         ),
+      ),
+    );
+  }
+}
+
+// ── Search Chips Row ──────────────────────────────────────────────────────────
+
+class _SearchChipsRow extends StatelessWidget {
+  final List<String> chips;
+  final String label;
+  final bool isHistory;
+  final ValueChanged<String> onChipTap;
+  final ValueChanged<String>? onChipDelete;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+
+  const _SearchChipsRow({
+    required this.chips,
+    required this.label,
+    required this.isHistory,
+    required this.onChipTap,
+    required this.onChipDelete,
+    required this.colorScheme,
+    required this.textTheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(
+              children: chips.map((term) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InputChip(
+                  label: Text(term),
+                  onPressed: () => onChipTap(term),
+                  onDeleted: isHistory ? () => onChipDelete?.call(term) : null,
+                  deleteIcon: isHistory
+                      ? Icon(Icons.close_rounded,
+                          size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5))
+                      : null,
+                  backgroundColor: colorScheme.surface,
+                  side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                  labelStyle: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }

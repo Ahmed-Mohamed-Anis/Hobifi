@@ -7,6 +7,7 @@ class HobifiSearchBar extends StatefulWidget {
   final VoidCallback onClear;
   final ValueChanged<bool>? onFocusChange;
   final ValueChanged<String>? onSubmitted;
+  final FocusNode? focusNode;
 
   const HobifiSearchBar({
     super.key,
@@ -15,6 +16,7 @@ class HobifiSearchBar extends StatefulWidget {
     required this.onClear,
     this.onFocusChange,
     this.onSubmitted,
+    this.focusNode,
   });
 
   @override
@@ -22,12 +24,19 @@ class HobifiSearchBar extends StatefulWidget {
 }
 
 class _HobifiSearchBarState extends State<HobifiSearchBar> {
-  final FocusNode _focusNode = FocusNode();
+  late FocusNode _focusNode;
+  bool _ownsNode = false;
   bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.focusNode != null) {
+      _focusNode = widget.focusNode!;
+    } else {
+      _focusNode = FocusNode();
+      _ownsNode = true;
+    }
     _focusNode.addListener(() {
       setState(() => _isFocused = _focusNode.hasFocus);
       widget.onFocusChange?.call(_focusNode.hasFocus);
@@ -36,7 +45,7 @@ class _HobifiSearchBarState extends State<HobifiSearchBar> {
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    if (_ownsNode) _focusNode.dispose();
     super.dispose();
   }
 
