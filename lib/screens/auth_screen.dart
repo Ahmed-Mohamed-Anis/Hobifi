@@ -434,6 +434,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   contentPadding: const EdgeInsets.symmetric(vertical: 18),
                 ),
                 onChanged: (val) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
                   if (val.length == 6) _handleVerifyEmail();
                 },
               ),

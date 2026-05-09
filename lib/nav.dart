@@ -74,6 +74,7 @@ class AppRouter {
       initialLocation: AppRoutes.auth,
       refreshListenable: authService,
       redirect: (context, state) {
+        if (authService.isInitializing) return null;
         final isAuthenticated = authService.isAuthenticated;
         final isAuthRoute = state.matchedLocation == AppRoutes.auth;
 

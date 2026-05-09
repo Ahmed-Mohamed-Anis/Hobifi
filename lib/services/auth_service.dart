@@ -11,16 +11,19 @@ class AuthService extends ChangeNotifier {
   bool _isLoading = false;
   bool _disposed = false;
   bool _suppressAuthListener = false;
+  bool _isInitializing = false;
   StreamSubscription<AuthState>? _authSub;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _currentUser != null;
+  bool get isInitializing => _isInitializing;
 
   Future<void> initialize() async {
     // Guard against double initialization
     if (_authSub != null) return;
 
+    _isInitializing = true;
     _isLoading = true;
     _safeNotify();
 
@@ -44,6 +47,7 @@ class AuthService extends ChangeNotifier {
       debugPrint('Failed to initialize auth: $e');
     } finally {
       _isLoading = false;
+      _isInitializing = false;
       _safeNotify();
     }
   }
