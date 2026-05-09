@@ -33,10 +33,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<List<_EarningsTransaction>>? _earningsFuture;
   int _selectedDays = 7; // 7, 30, or 90
   String _activitySortBy = 'revenue'; // 'revenue' | 'bookings' | 'fillRate'
+  String _chartType = 'revenue'; // 'revenue' | 'bookings' | 'fillRate'
+  Future<List<_DailyRevenue>>? _bookingsFuture;
+  Future<List<_DailyRevenue>>? _fillRateFuture;
 
   void _initDashboard(String businessId) {
     _statsFuture = _fetchStats(businessId);
     _revenueFuture = _fetchRevenueChart(businessId);
+    _bookingsFuture = _fetchBookingsChart(businessId);
+    _fillRateFuture = _fetchFillRateChart(businessId);
     _perActivityFuture = _fetchPerActivityStats(businessId);
     _earningsFuture = _fetchEarningsHistory(businessId);
   }
@@ -104,6 +109,124 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final day = now.subtract(Duration(days: _selectedDays - 1 - i));
       return _DailyRevenue(dayIndex: i, amount: 0.0, date: day);
     });
+  }
+
+  Future<List<_DailyRevenue>> _fetchBookingsChart(String businessId) async {
+    try {
+      final acts = await SupabaseService.select('activities',
+          select: 'id', filters: {'business_id': businessId});
+      final activityIds =
+          acts.map((e) => e['id'] as String).whereType<String>().toList();
+      if (activityIds.isEmpty) return _generateEmptyDays();
+
+      final now = DateTime.now();
+      final startDate = now.subtract(Duration(days: _selectedDays - 1));
+
+      final rows = await SupabaseService.from('bookings')
+          .select('created_at')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', startDate.toIso8601String()) as List<dynamic>;
+
+      final Map<String, double> dailyCounts = {};
+      for (int i = 0; i < _selectedDays; i++) {
+        final day = DateTime(startDate.year, startDate.month, startDate.day)
+            .add(Duration(days: i));
+        final key =
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+        dailyCounts[key] = 0.0;
+      }
+
+      for (final row in rows) {
+        final d = DateTime.parse(row['created_at'] as String);
+        final key =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        if (dailyCounts.containsKey(key)) dailyCounts[key] = dailyCounts[key]! + 1;
+      }
+
+      final sortedKeys = dailyCounts.keys.toList()..sort();
+      return sortedKeys.asMap().entries.map((entry) {
+        final date = DateTime.parse(entry.value);
+        return _DailyRevenue(
+            dayIndex: entry.key,
+            amount: dailyCounts[entry.value] ?? 0.0,
+            date: date);
+      }).toList();
+    } catch (e) {
+      debugPrint('_fetchBookingsChart failed: $e');
+      return _generateEmptyDays();
+    }
+  }
+
+  Future<List<_DailyRevenue>> _fetchFillRateChart(String businessId) async {
+    try {
+      final acts = await SupabaseService.select('activities',
+          select: 'id,max_guests', filters: {'business_id': businessId});
+      final activityIds =
+          acts.map((e) => e['id'] as String).whereType<String>().toList();
+      if (activityIds.isEmpty) return _generateEmptyDays();
+
+      final maxGuestsByActivity = <String, int>{
+        for (final a in acts)
+          a['id'] as String: (a['max_guests'] as num?)?.toInt() ?? 0,
+      };
+
+      final now = DateTime.now();
+      final startDate = now.subtract(Duration(days: _selectedDays - 1));
+
+      final rows = await SupabaseService.from('bookings')
+          .select('created_at,activity_id')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', startDate.toIso8601String()) as List<dynamic>;
+
+      final Map<String, Map<String, int>> dailyActivityBookings = {};
+      for (int i = 0; i < _selectedDays; i++) {
+        final day = DateTime(startDate.year, startDate.month, startDate.day)
+            .add(Duration(days: i));
+        final key =
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+        dailyActivityBookings[key] = {};
+      }
+
+      for (final row in rows) {
+        final d = DateTime.parse(row['created_at'] as String);
+        final key =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        final actId = row['activity_id'] as String;
+        if (dailyActivityBookings.containsKey(key)) {
+          dailyActivityBookings[key]![actId] =
+              (dailyActivityBookings[key]![actId] ?? 0) + 1;
+        }
+      }
+
+      final sortedKeys = dailyActivityBookings.keys.toList()..sort();
+      return sortedKeys.asMap().entries.map((entry) {
+        final dayKey = entry.value;
+        final date = DateTime.parse(dayKey);
+        final bookingsByActivity = dailyActivityBookings[dayKey]!;
+
+        double fillRate = 0.0;
+        if (bookingsByActivity.isNotEmpty) {
+          double totalFillRate = 0.0;
+          int counted = 0;
+          for (final actId in bookingsByActivity.keys) {
+            final max = maxGuestsByActivity[actId] ?? 0;
+            if (max > 0) {
+              totalFillRate +=
+                  (bookingsByActivity[actId]! / max * 100).clamp(0.0, 100.0);
+              counted++;
+            }
+          }
+          if (counted > 0) fillRate = totalFillRate / counted;
+        }
+
+        return _DailyRevenue(dayIndex: entry.key, amount: fillRate, date: date);
+      }).toList();
+    } catch (e) {
+      debugPrint('_fetchFillRateChart failed: $e');
+      return _generateEmptyDays();
+    }
   }
 
   /// Fetch recent payment transactions for Earnings History
@@ -402,6 +525,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return <String, _PerActivityStats>{};
     }
   }
+
+  static const _chartOptions = [
+    ('revenue', 'Revenue'),
+    ('bookings', 'Bookings'),
+    ('fillRate', 'Fill Rate'),
+  ];
 
   static const _sortOptions = [
     ('revenue', 'Revenue'),
@@ -815,27 +944,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                   ),
 
-                // ── Revenue Chart ────────────────────────────────────
+                // ── Analytics Charts ─────────────────────────────────
                 if (userId != null) ...[
-                  // Period selector
+                  // Chart type selector
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                     child: Row(
                       children: [
-                        for (final days in [7, 30, 90])
-                          HobifiChip(
-                            label: '${days}d',
-                            isSelected: _selectedDays == days,
-                            onTap: () {
-                              setState(() => _selectedDays = days);
-                              _refreshDashboard(userId);
-                            },
+                        for (final (key, label) in _chartOptions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: HobifiChip(
+                              label: label,
+                              isSelected: _chartType == key,
+                              onTap: () => setState(() => _chartType = key),
+                            ),
                           ),
                       ],
                     ),
                   ),
+                  // Period selector
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    child: Row(
+                      children: [
+                        for (final days in [7, 30, 90])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: HobifiChip(
+                              label: '${days}d',
+                              isSelected: _selectedDays == days,
+                              onTap: () {
+                                setState(() => _selectedDays = days);
+                                _refreshDashboard(userId);
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Chart area
                   FutureBuilder<List<_DailyRevenue>>(
-                    future: _revenueFuture,
+                    future: _chartType == 'revenue'
+                        ? _revenueFuture
+                        : _chartType == 'bookings'
+                            ? _bookingsFuture
+                            : _fillRateFuture,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState ==
                               ConnectionState.waiting &&
@@ -848,24 +1002,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: 20),
                         );
                       }
-                      final revenueData =
+                      final chartData =
                           snapshot.data ?? _generateEmptyDays();
-                      final maxY = revenueData
+                      final maxY = chartData
                           .map((e) => e.amount)
                           .fold<double>(0.0, (a, b) => a > b ? a : b);
-                      final spots = revenueData
+                      final spots = chartData
                           .map((e) =>
                               FlSpot(e.dayIndex.toDouble(), e.amount))
                           .toList();
-                      const weekdays = [
-                        'Mon',
-                        'Tue',
-                        'Wed',
-                        'Thu',
-                        'Fri',
-                        'Sat',
-                        'Sun'
-                      ];
+
+                      final chartTitle = switch (_chartType) {
+                        'revenue' => 'Revenue Trend (EGP)',
+                        'bookings' => 'Daily Bookings',
+                        _ => 'Fill Rate (%)',
+                      };
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -886,7 +1037,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Revenue Trend',
+                                chartTitle,
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -896,11 +1047,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 height: 180,
                                 child: LineChart(
                                   LineChartData(
+                                    minY: 0,
+                                    maxY: _chartType == 'fillRate'
+                                        ? 100
+                                        : (maxY > 0 ? maxY * 1.2 : 10),
                                     gridData: FlGridData(
                                       show: true,
                                       drawVerticalLine: false,
-                                      horizontalInterval:
-                                          maxY > 0 ? maxY / 4 : 25,
+                                      horizontalInterval: _chartType == 'fillRate'
+                                          ? 25
+                                          : (maxY > 0 ? maxY / 4 : 25),
                                       getDrawingHorizontalLine: (value) =>
                                           FlLine(
                                         color: colorScheme.outline
@@ -914,65 +1070,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         sideTitles: SideTitles(
                                           showTitles: true,
                                           getTitlesWidget: (value, meta) {
-                                            // Skip non-integer positions (fl_chart calls this for intermediate values too)
-                                            if (value != value.roundToDouble()) return const SizedBox.shrink();
-                                            final idx = value.toInt();
-                                            if (idx < 0 || idx >= revenueData.length) {
+                                            if (value != value.roundToDouble()) {
                                               return const SizedBox.shrink();
                                             }
-                                            // Step: show every nth label so they don't crowd
-                                            final step = _selectedDays <= 7 ? 1 : _selectedDays <= 30 ? 5 : 15;
-                                            if (idx % step != 0) return const SizedBox.shrink();
-
-                                            final day = revenueData[idx].date;
-                                            final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                                            final String label;
-                                            if (_selectedDays <= 7) {
-                                              label = weekdays[day.weekday - 1];
-                                            } else if (_selectedDays <= 30) {
-                                              label = '${months[day.month - 1]} ${day.day}';
-                                            } else {
-                                              label = '${months[day.month - 1]} ${day.day}';
+                                            final idx = value.toInt();
+                                            if (idx < 0 || idx >= chartData.length) {
+                                              return const SizedBox.shrink();
                                             }
-
+                                            final step = _selectedDays <= 7
+                                                ? 1
+                                                : _selectedDays <= 30
+                                                    ? 5
+                                                    : 15;
+                                            if (idx % step != 0) return const SizedBox.shrink();
+                                            final day = chartData[idx].date;
+                                            const months = [
+                                              'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                                            ];
+                                            final lbl = _selectedDays == 7
+                                                ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                                                    [day.weekday - 1]
+                                                : '${day.day} ${months[day.month - 1]}';
                                             return Padding(
-                                              padding: const EdgeInsets.only(top: 8),
-                                              child: Text(
-                                                label,
+                                              padding: const EdgeInsets.only(top: 4),
+                                              child: Text(lbl,
                                                 style: theme.textTheme.labelSmall?.copyWith(
                                                   color: colorScheme.onSurface.withValues(alpha: 0.4),
-                                                ),
-                                              ),
+                                                )),
                                             );
                                           },
-                                          reservedSize: 28,
+                                          reservedSize: 30,
                                         ),
                                       ),
-                                      leftTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                      leftTitles: AxisTitles(
+                                        sideTitles: SideTitles(
+                                          showTitles: true,
+                                          reservedSize: 44,
+                                          getTitlesWidget: (value, meta) {
+                                            if (value == meta.min || value == meta.max) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final lbl = _chartType == 'fillRate'
+                                                ? '${value.toInt()}%'
+                                                : value >= 1000
+                                                    ? '${(value / 1000).toStringAsFixed(1)}k'
+                                                    : value.toInt().toString();
+                                            return Text(lbl,
+                                              style: theme.textTheme.labelSmall?.copyWith(
+                                                color: colorScheme.onSurface.withValues(alpha: 0.4),
+                                              ));
+                                          },
+                                        ),
+                                      ),
                                       topTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                          sideTitles: SideTitles(showTitles: false)),
                                       rightTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                          sideTitles: SideTitles(showTitles: false)),
                                     ),
                                     borderData: FlBorderData(show: false),
-                                    minY: 0,
-                                    maxY: maxY > 0 ? maxY * 1.2 : 100,
                                     lineBarsData: [
                                       LineChartBarData(
                                         spots: spots,
                                         isCurved: true,
                                         color: colorScheme.primary,
-                                        barWidth: 3,
+                                        barWidth: 2.5,
                                         dotData: FlDotData(
-                                          show: true,
-                                          getDotPainter: (spot, percent,
-                                                  bar, index) =>
+                                          show: _selectedDays == 7,
+                                          getDotPainter: (spot, _, __, ___) =>
                                               FlDotCirclePainter(
-                                            radius: 3,
+                                            radius: 4,
                                             color: colorScheme.primary,
                                             strokeWidth: 2,
                                             strokeColor: colorScheme.surface,
@@ -985,7 +1152,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             end: Alignment.bottomCenter,
                                             colors: [
                                               colorScheme.primary
-                                                  .withValues(alpha: 0.3),
+                                                  .withValues(alpha: 0.15),
                                               colorScheme.primary
                                                   .withValues(alpha: 0.0),
                                             ],
