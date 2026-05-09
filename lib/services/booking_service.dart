@@ -138,6 +138,11 @@ class BookingService extends ChangeNotifier {
     }
   }
 
+  /// Force-refresh all business bookings. Called by the booking management screen.
+  Future<void> loadBusinessBookingsAll(String businessId) async {
+    await loadBusinessBookings(businessId);
+  }
+
   Future<void> loadBusinessBookings(String businessId) async {
     _isLoading = true;
     notifyListeners();

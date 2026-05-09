@@ -18,6 +18,7 @@ import 'package:hobby_haven/screens/business/activity_manage_screen.dart';
 import 'package:hobby_haven/screens/business/wallet_screen.dart';
 import 'package:hobby_haven/screens/business/business_profile_screen.dart';
 import 'package:hobby_haven/screens/business/business_onboarding_screen.dart';
+import 'package:hobby_haven/screens/business/business_bookings_screen.dart';
 import 'package:hobby_haven/screens/onboarding_screen.dart';
 import 'package:hobby_haven/screens/user/section_explore_screen.dart';
 import 'package:hobby_haven/services/auth_service.dart';
@@ -320,6 +321,15 @@ class AppRouter {
             );
           },
         ),
+        GoRoute(
+          path: AppRoutes.businessBookings,
+          name: 'business-bookings',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) => _buildSmoothTransition(
+            child: const BusinessBookingsScreen(),
+            state: state,
+          ),
+        ),
       ],
     );
     return _router!;
@@ -537,4 +547,5 @@ class AppRoutes {
   static const String profileHistory = '/profile/history';
   static const String friends = '/friends';
   static const String sectionExplore = '/section-explore';
+  static const String businessBookings = '/business-bookings';
 }

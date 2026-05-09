@@ -629,6 +629,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
 
+                // ── All Bookings CTA ────────────────────────────────
+                if (userId != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push(AppRoutes.businessBookings),
+                      icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                      label: const Text('All Bookings'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // ── Stat Cards (horizontal scroll) ──────────────────
                 if (userId == null)
                   _buildStatCardsShimmer()
