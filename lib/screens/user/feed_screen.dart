@@ -421,14 +421,14 @@ class _FeedScreenState extends State<FeedScreen> {
             title: 'Popular Near You',
             subtitle: 'Closest activities to you',
             actionLabel: 'Explore more',
-            onSeeAll: () => context.push(
+            onSeeAll: userLocation != null ? () => context.push(
               AppRoutes.sectionExplore,
               extra: {
                 'title': 'Popular Near You',
                 'subtitle': 'Closest activities to you',
                 'filterSort': nearbyFilterSort,
               },
-            ),
+            ) : null,
           ),
           if (userLocation == null)
             Padding(
@@ -437,7 +437,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 icon: Icons.location_off_rounded,
                 title: 'Enable location to see activities near you',
                 actionLabel: 'Enable Location',
-                onAction: () => Geolocator.openAppSettings(),
+                onAction: () { Geolocator.openAppSettings(); },
               ),
             )
           else
