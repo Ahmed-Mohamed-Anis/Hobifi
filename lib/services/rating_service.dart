@@ -156,4 +156,24 @@ class RatingService extends ChangeNotifier {
       return 0.0;
     }
   }
+
+  Future<Map<String, dynamic>> reportReview(String reviewId, String reason) async {
+    try {
+      if (reason.trim().isEmpty) {
+        return {'success': false, 'error': 'Reason cannot be empty'};
+      }
+
+      final userId = SupabaseConfig.auth.currentUser?.id;
+      if (userId == null) return {'success': false, 'error': 'Not authenticated'};
+      await SupabaseService.insert('review_reports', {
+        'review_id': reviewId,
+        'reporter_id': userId,
+        'reason': reason,
+      });
+      return {'success': true};
+    } catch (e) {
+      debugPrint('reportReview error: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 }

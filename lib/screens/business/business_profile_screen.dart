@@ -22,16 +22,21 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
   bool _changingPhoto = false;
   bool _editingBio = false;
   bool _savingBio = false;
+  bool _editingPhone = false;
+  bool _savingPhone = false;
   late TextEditingController _bioController;
+  late TextEditingController _phoneController;
 
   @override
   void initState() {
     super.initState();
     _bioController = TextEditingController();
+    _phoneController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthService>();
       if (auth.currentUser != null) {
         _bioController.text = auth.currentUser!.bio ?? '';
+        _phoneController.text = auth.currentUser!.phone ?? '';
         context.read<BookingService>().loadBusinessBookings(auth.currentUser!.id);
       }
     });
@@ -40,7 +45,23 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
   @override
   void dispose() {
     _bioController.dispose();
+    _phoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _savePhone() async {
+    final auth = context.read<AuthService>();
+    setState(() => _savingPhone = true);
+    final ok = await auth.updateProfile(phone: _phoneController.text.trim());
+    if (mounted) {
+      setState(() {
+        _savingPhone = false;
+        _editingPhone = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Phone number updated' : 'Failed to update phone number')),
+      );
+    }
   }
 
   Future<void> _saveBio() async {
@@ -271,6 +292,77 @@ class _BusinessProfileScreenState extends State<BusinessProfileScreen> {
                                     : FontStyle.italic,
                               ),
                               textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      // Phone number edit
+                      if (_editingPhone)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _phoneController,
+                              keyboardType: TextInputType.phone,
+                              decoration: InputDecoration(
+                                labelText: 'Phone Number',
+                                hintText: '+201000000000',
+                                prefixIcon: const Icon(Icons.phone_rounded),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: _savingPhone
+                                      ? null
+                                      : () => setState(() {
+                                            _editingPhone = false;
+                                            _phoneController.text = user?.phone ?? '';
+                                          }),
+                                  child: const Text('Cancel'),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: _savingPhone ? null : _savePhone,
+                                  child: _savingPhone
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Text('Save'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () => setState(() => _editingPhone = true),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.onSurface.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.phone_rounded, size: 16, color: colorScheme.onSurface.withValues(alpha: 0.5)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  (user?.phone != null && user!.phone!.isNotEmpty) ? user.phone! : 'Tap to add a phone number...',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: (user?.phone != null && user!.phone!.isNotEmpty)
+                                        ? colorScheme.onSurface
+                                        : colorScheme.onSurface.withValues(alpha: 0.4),
+                                    fontStyle: (user?.phone != null && user!.phone!.isNotEmpty)
+                                        ? FontStyle.normal
+                                        : FontStyle.italic,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

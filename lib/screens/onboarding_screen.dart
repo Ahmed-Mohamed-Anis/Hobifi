@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/services/location_service.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
 
@@ -222,6 +223,20 @@ class _InterestsPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Text(
             'What are you into?',
             style: theme.textTheme.headlineMedium?.copyWith(
@@ -231,7 +246,7 @@ class _InterestsPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Pick at least 3 interests so we can personalize your feed.',
+            'Let\'s find what moves you — pick a few interests to personalize your feed.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),
@@ -347,10 +362,38 @@ class _InterestsPage extends StatelessWidget {
 
 // ─── Page 2: City / Location ───
 
-class _CityPage extends StatelessWidget {
+class _CityPage extends StatefulWidget {
   final TextEditingController controller;
-
   const _CityPage({required this.controller});
+
+  @override
+  State<_CityPage> createState() => _CityPageState();
+}
+
+class _CityPageState extends State<_CityPage> {
+  bool _locationDetected = false;
+  bool _detecting = false;
+
+  Future<void> _useMyLocation() async {
+    setState(() => _detecting = true);
+    final locationService = context.read<LocationService>();
+    final result = await locationService.getCurrentLocation();
+    if (!mounted) return;
+    if (result == null) {
+      setState(() => _detecting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Location access denied — enter your city manually'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _locationDetected = true;
+      _detecting = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -378,32 +421,115 @@ class _CityPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 40),
-          TextField(
-            controller: controller,
-            textCapitalization: TextCapitalization.words,
-            decoration: InputDecoration(
-              hintText: 'e.g. Cairo, Alexandria, London...',
-              prefixIcon:
-                  Icon(Icons.location_on_rounded, color: colorScheme.primary),
-              border: OutlineInputBorder(
+
+          if (_locationDetected)
+            // Confirmation chip
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: colorScheme.tertiary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(
-                    color: colorScheme.outline.withValues(alpha: 0.2)),
+                border: Border.all(color: colorScheme.tertiary.withValues(alpha: 0.4)),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(
-                    color: colorScheme.outline.withValues(alpha: 0.2)),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on_rounded, color: colorScheme.tertiary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Location detected',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.tertiary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _locationDetected = false),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Change',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide:
-                    BorderSide(color: colorScheme.primary, width: 2),
+            )
+          else ...[
+            // "Use my location" button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _detecting ? null : _useMyLocation,
+                icon: _detecting
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colorScheme.primary,
+                        ),
+                      )
+                    : Icon(Icons.my_location_rounded, color: colorScheme.primary),
+                label: Text(
+                  _detecting ? 'Detecting...' : 'Use my location',
+                  style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
+                ),
               ),
-              filled: true,
-              fillColor: colorScheme.surface,
             ),
-          ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: Divider(color: colorScheme.outline.withValues(alpha: 0.3))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: colorScheme.outline.withValues(alpha: 0.3))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // City text field
+            TextField(
+              controller: widget.controller,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                hintText: 'e.g. Cairo, Alexandria, London...',
+                prefixIcon: Icon(Icons.location_on_rounded, color: colorScheme.primary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                ),
+                filled: true,
+                fillColor: colorScheme.surface,
+              ),
+            ),
+          ],
+
           const SizedBox(height: 16),
           Center(
             child: Text(

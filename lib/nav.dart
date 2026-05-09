@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:hobby_haven/services/connectivity_service.dart';
 import 'package:hobby_haven/screens/auth_screen.dart';
 import 'package:hobby_haven/screens/user/feed_screen.dart';
 import 'package:hobby_haven/screens/user/activity_details_screen.dart';
 import 'package:hobby_haven/screens/user/profile_screen.dart';
 import 'package:hobby_haven/screens/user/bookings_screen.dart';
-import 'package:hobby_haven/screens/user/saved_screen.dart';
+import 'package:hobby_haven/screens/user/friends_screen.dart';
 import 'package:hobby_haven/screens/user/booking_confirm_screen.dart';
 import 'package:hobby_haven/screens/user/payment_screen.dart';
 import 'package:hobby_haven/screens/user/ticket_screen.dart';
+import 'package:hobby_haven/screens/user/booking_history_screen.dart';
 import 'package:hobby_haven/screens/business/dashboard_screen.dart';
 import 'package:hobby_haven/screens/business/create_activity_screen.dart';
 import 'package:hobby_haven/screens/business/activity_manage_screen.dart';
 import 'package:hobby_haven/screens/business/wallet_screen.dart';
 import 'package:hobby_haven/screens/business/business_profile_screen.dart';
+import 'package:hobby_haven/screens/business/business_onboarding_screen.dart';
+import 'package:hobby_haven/screens/business/business_bookings_screen.dart';
 import 'package:hobby_haven/screens/onboarding_screen.dart';
+import 'package:hobby_haven/screens/user/section_explore_screen.dart';
 import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/utils/feed_filters.dart';
 
 /// Smooth page transition for push navigation
 CustomTransitionPage<void> _buildSmoothTransition({
@@ -68,6 +75,7 @@ class AppRouter {
       initialLocation: AppRoutes.auth,
       refreshListenable: authService,
       redirect: (context, state) {
+        if (authService.isInitializing) return null;
         final isAuthenticated = authService.isAuthenticated;
         final isAuthRoute = state.matchedLocation == AppRoutes.auth;
 
@@ -78,6 +86,10 @@ class AppRouter {
         if (isAuthenticated && isAuthRoute) {
           final user = authService.currentUser;
           if (user?.role.name == 'business') {
+            // Un-onboarded business → wizard; otherwise dashboard
+            if (user != null && !user.businessOnboarded) {
+              return AppRoutes.businessOnboarding;
+            }
             return AppRoutes.businessDashboard;
           }
           // New user with no interests → onboarding
@@ -90,7 +102,35 @@ class AppRouter {
         // Authenticated user navigating — check onboarding state
         if (isAuthenticated) {
           final user = authService.currentUser;
-          final isOnboarding = state.matchedLocation == AppRoutes.onboarding;
+          final loc = state.matchedLocation;
+          final isOnboarding = loc == AppRoutes.onboarding;
+          final isBusinessOnboarding = loc == AppRoutes.businessOnboarding;
+
+          // Business onboarding gate
+          if (user != null &&
+              user.role.name == 'business' &&
+              !user.businessOnboarded &&
+              !isBusinessOnboarding) {
+            return AppRoutes.businessOnboarding;
+          }
+          // Already-onboarded business visiting the wizard → dashboard
+          if (user != null &&
+              user.role.name == 'business' &&
+              user.businessOnboarded &&
+              isBusinessOnboarding) {
+            return AppRoutes.businessDashboard;
+          }
+
+          // Hard block: onboarded business users must never see user shell routes.
+          // This catches any unexpected redirect that would land them at /feed etc.
+          if (user != null && user.role.name == 'business' && user.businessOnboarded) {
+            final isUserShellRoute = loc == AppRoutes.feed ||
+                loc == AppRoutes.bookings ||
+                loc == AppRoutes.friends ||
+                loc == AppRoutes.profile ||
+                loc == AppRoutes.onboarding;
+            if (isUserShellRoute) return AppRoutes.businessDashboard;
+          }
 
           // User role with no interests should go to onboarding
           if (user != null && user.role.name == 'user' && user.interests.isEmpty && !isOnboarding) {
@@ -119,10 +159,20 @@ class AppRouter {
           pageBuilder: (context, state) => const NoTransitionPage(child: OnboardingScreen()),
         ),
 
+        // ─── Business Onboarding (no shell) ───
+        GoRoute(
+          path: AppRoutes.businessOnboarding,
+          name: 'business-onboarding',
+          pageBuilder: (context, state) => const NoTransitionPage(child: BusinessOnboardingScreen()),
+        ),
+
         // ─── User Shell with Bottom Nav ───
         ShellRoute(
           navigatorKey: _userShellNavigatorKey,
-          builder: (context, state, child) => _UserShellScreen(child: child),
+          builder: (context, state, child) => _UserShellScreen(
+            location: state.uri.path,
+            child: child,
+          ),
           routes: [
             GoRoute(
               path: AppRoutes.feed,
@@ -135,9 +185,9 @@ class AppRouter {
               pageBuilder: (context, state) => const NoTransitionPage(child: BookingsScreen()),
             ),
             GoRoute(
-              path: AppRoutes.saved,
-              name: 'saved',
-              pageBuilder: (context, state) => const NoTransitionPage(child: SavedScreen()),
+              path: AppRoutes.friends,
+              name: 'friends',
+              pageBuilder: (context, state) => const NoTransitionPage(child: FriendsScreen()),
             ),
             GoRoute(
               path: AppRoutes.profile,
@@ -150,7 +200,10 @@ class AppRouter {
         // ─── Business Shell with Bottom Nav ───
         ShellRoute(
           navigatorKey: _businessShellNavigatorKey,
-          builder: (context, state, child) => _BusinessShellScreen(child: child),
+          builder: (context, state, child) => _BusinessShellScreen(
+            location: state.uri.path,
+            child: child,
+          ),
           routes: [
             GoRoute(
               path: AppRoutes.businessDashboard,
@@ -243,6 +296,40 @@ class AppRouter {
             );
           },
         ),
+        GoRoute(
+          path: AppRoutes.profileHistory,
+          name: 'profile-history',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) => _buildSmoothTransition(
+            child: const BookingHistoryScreen(),
+            state: state,
+          ),
+        ),
+        GoRoute(
+          path: AppRoutes.sectionExplore,
+          name: 'section-explore',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>;
+            return _buildSmoothTransition(
+              child: SectionExploreScreen(
+                title: extra['title'] as String,
+                subtitle: extra['subtitle'] as String,
+                filterSort: extra['filterSort'] as SectionFilterSort,
+              ),
+              state: state,
+            );
+          },
+        ),
+        GoRoute(
+          path: AppRoutes.businessBookings,
+          name: 'business-bookings',
+          parentNavigatorKey: _rootNavigatorKey,
+          pageBuilder: (context, state) => _buildSmoothTransition(
+            child: const BusinessBookingsScreen(),
+            state: state,
+          ),
+        ),
       ],
     );
     return _router!;
@@ -252,12 +339,12 @@ class AppRouter {
 // ─── User Bottom Nav Shell ───
 class _UserShellScreen extends StatelessWidget {
   final Widget child;
-  const _UserShellScreen({required this.child});
+  final String location;
+  const _UserShellScreen({required this.child, required this.location});
 
-  int _currentIndex(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
+  int get _currentIndex {
     if (location.startsWith(AppRoutes.bookings)) return 1;
-    if (location.startsWith(AppRoutes.saved)) return 2;
+    if (location.startsWith(AppRoutes.friends)) return 2;
     if (location.startsWith(AppRoutes.profile)) return 3;
     return 0; // feed
   }
@@ -266,10 +353,15 @@ class _UserShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final idx = _currentIndex(context);
+    final idx = _currentIndex;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const _OfflineBanner(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -285,7 +377,7 @@ class _UserShellScreen extends StatelessWidget {
               case 1:
                 context.go(AppRoutes.bookings);
               case 2:
-                context.go(AppRoutes.saved);
+                context.go(AppRoutes.friends);
               case 3:
                 context.go(AppRoutes.profile);
             }
@@ -293,23 +385,23 @@ class _UserShellScreen extends StatelessWidget {
           backgroundColor: colorScheme.surface,
           indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
           indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          height: 68,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          height: 56,
           destinations: [
             NavigationDestination(
               icon: Icon(Icons.explore_outlined, color: idx == 0 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
               selectedIcon: Icon(Icons.explore_rounded, color: colorScheme.primary),
-              label: 'Browse',
+              label: 'Discover',
             ),
             NavigationDestination(
               icon: Icon(Icons.confirmation_number_outlined, color: idx == 1 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
               selectedIcon: Icon(Icons.confirmation_number_rounded, color: colorScheme.primary),
-              label: 'Tickets',
+              label: 'My Hobbies',
             ),
             NavigationDestination(
-              icon: Icon(Icons.favorite_outline_rounded, color: idx == 2 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
-              selectedIcon: Icon(Icons.favorite_rounded, color: colorScheme.primary),
-              label: 'Saved',
+              icon: Icon(Icons.people_outline_rounded, color: idx == 2 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
+              selectedIcon: Icon(Icons.people_rounded, color: colorScheme.primary),
+              label: 'Friends',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline_rounded, color: idx == 3 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
@@ -326,10 +418,10 @@ class _UserShellScreen extends StatelessWidget {
 // ─── Business Bottom Nav Shell ───
 class _BusinessShellScreen extends StatelessWidget {
   final Widget child;
-  const _BusinessShellScreen({required this.child});
+  final String location;
+  const _BusinessShellScreen({required this.child, required this.location});
 
-  int _currentIndex(BuildContext context) {
-    final location = GoRouterState.of(context).matchedLocation;
+  int get _currentIndex {
     if (location.startsWith(AppRoutes.businessCreateActivity)) return 1;
     if (location.startsWith(AppRoutes.businessWallet)) return 2;
     if (location.startsWith(AppRoutes.businessProfile)) return 3;
@@ -340,10 +432,15 @@ class _BusinessShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final idx = _currentIndex(context);
+    final idx = _currentIndex;
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const _OfflineBanner(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
@@ -367,8 +464,8 @@ class _BusinessShellScreen extends StatelessWidget {
           backgroundColor: colorScheme.surface,
           indicatorColor: colorScheme.primary.withValues(alpha: 0.12),
           indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          height: 68,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+          height: 56,
           destinations: [
             NavigationDestination(
               icon: Icon(Icons.dashboard_outlined, color: idx == 0 ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5)),
@@ -397,12 +494,45 @@ class _BusinessShellScreen extends StatelessWidget {
   }
 }
 
+// ─── Offline Banner ───
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final isOnline = context.watch<ConnectivityService>().isOnline;
+    if (isOnline) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.inverseSurface,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          color: colorScheme.inverseSurface,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.wifi_off_rounded, color: colorScheme.onInverseSurface, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                'No internet connection',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onInverseSurface),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AppRoutes {
   static const String auth = '/';
   static const String onboarding = '/onboarding';
   static const String feed = '/feed';
   static const String bookings = '/bookings';
-  static const String saved = '/saved';
   static const String activity = '/activity';
   static const String businessActivity = '/business-activity';
   static const String profile = '/profile';
@@ -413,4 +543,9 @@ class AppRoutes {
   static const String payment = '/payment';
   static const String ticket = '/ticket';
   static const String businessProfile = '/business-profile';
+  static const String businessOnboarding = '/business-onboarding';
+  static const String profileHistory = '/profile/history';
+  static const String friends = '/friends';
+  static const String sectionExplore = '/section-explore';
+  static const String businessBookings = '/business-bookings';
 }

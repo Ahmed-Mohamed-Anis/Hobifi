@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hobby_haven/models/activity_model.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
@@ -53,6 +56,15 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openDirections(double lat, double lng) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -118,7 +130,7 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
                       SharePlus.instance.share(
                         ShareParams(
                           text:
-                              'Check out "${activity.title}" on HOBIFI!\n${activity.location} — EGP ${activity.price.toStringAsFixed(0)}/person',
+                              'Check out ${activity.title} on Hobifi!\nhobifi://activity/${activity.id}',
                         ),
                       );
                     },
@@ -253,6 +265,62 @@ class _ActivityDetailsScreenState extends State<ActivityDetailsScreen> {
                       ],
                     ),
 
+                    // Map section (only when coordinates available)
+                    if (activity.latitude != null) ...[
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 200,
+                          child: FlutterMap(
+                            options: MapOptions(
+                              initialCenter: LatLng(activity.latitude!, activity.longitude!),
+                              initialZoom: 15,
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.none,
+                              ),
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.hobifi.app',
+                              ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(activity.latitude!, activity.longitude!),
+                                    child: const Icon(
+                                      Icons.location_pin,
+                                      color: Colors.red,
+                                      size: 40,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openDirections(
+                            activity.latitude!,
+                            activity.longitude!,
+                          ),
+                          icon: const Icon(Icons.directions_rounded),
+                          label: const Text('Get Directions'),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     // 3. Description
                     const SizedBox(height: 16),
                     Text(
@@ -376,7 +444,7 @@ class _CircleButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
+          color: colorScheme.surface.withValues(alpha: 0.9),
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
@@ -881,10 +949,144 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
           const SizedBox(height: 12),
           ...reviewsWithComments
               .take(5)
-              .map((review) => _ReviewCard(review: review)),
+              .map((review) => _ReviewCard(
+                    review: review,
+                    onReport: () => _showReportDialog(context, review.id),
+                  )),
         ],
       ],
     );
+  }
+
+  Future<void> _showReportDialog(BuildContext context, String reviewId) async {
+    final reasonController = TextEditingController();
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final messenger = ScaffoldMessenger.of(context);
+    final ratingService = context.read<RatingService>();
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            24,
+            20,
+            24 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Report Review',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please describe why you are reporting this review.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                maxLines: 3,
+                maxLength: 300,
+                decoration: InputDecoration(
+                  hintText: 'Enter reason...',
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                  filled: true,
+                  fillColor: colorScheme.primary.withValues(alpha: 0.04),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: colorScheme.outline.withValues(alpha: 0.2)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: colorScheme.outline.withValues(alpha: 0.2)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        BorderSide(color: colorScheme.primary, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.all(14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Submit'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      final reason = reasonController.text.trim();
+
+      if (reason.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Please enter a reason for reporting.')),
+        );
+        reasonController.dispose();
+        return;
+      }
+
+      try {
+        await ratingService.reportReview(reviewId, reason);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Review reported. Thank you.')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Failed to report review.')),
+        );
+      }
+    }
+
+    reasonController.dispose();
   }
 
   Future<void> _submitReview(String userId) async {
@@ -898,9 +1100,10 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
             comment: comment.isNotEmpty ? comment : null,
           );
       if (mounted) {
-        await context
-            .read<RatingService>()
-            .loadActivityReviews(widget.activity.id, force: true);
+        await Future.wait([
+          context.read<RatingService>().loadActivityReviews(widget.activity.id, force: true),
+          context.read<ActivityService>().refreshActivities(),
+        ]);
       }
       if (mounted) {
         setState(() {
@@ -926,7 +1129,9 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
 
 class _ReviewCard extends StatelessWidget {
   final RatingModel review;
-  const _ReviewCard({required this.review});
+  final VoidCallback? onReport;
+
+  const _ReviewCard({required this.review, this.onReport});
 
   @override
   Widget build(BuildContext context) {
@@ -964,6 +1169,21 @@ class _ReviewCard extends StatelessWidget {
                 timeAgo,
                 style: theme.textTheme.labelSmall?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.5)),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 16,
+                  tooltip: 'Report review',
+                  icon: Icon(
+                    Icons.flag_outlined,
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                  onPressed: onReport,
+                ),
               ),
             ],
           ),

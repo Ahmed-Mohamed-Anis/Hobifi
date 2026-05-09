@@ -29,7 +29,8 @@ serve(async (req: Request) => {
       );
     }
 
-    const { booking_id } = await req.json();
+    const body = await req.json();
+    const { booking_id } = body;
     if (!booking_id) {
       return new Response(
         JSON.stringify({ error: "booking_id is required" }),
@@ -37,19 +38,39 @@ serve(async (req: Request) => {
       );
     }
 
-    // Fetch booking — must belong to the authenticated user
-    const { data: booking, error: bookingError } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", booking_id)
-      .eq("user_id", user.id)
-      .single();
+    const cancelledBy: string = body.cancelled_by || "user";
 
-    if (bookingError || !booking) {
-      return new Response(
-        JSON.stringify({ error: "Booking not found" }),
-        { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-      );
+    let booking: any;
+    if (cancelledBy === "business") {
+      // Business cancelling: verify caller owns the activity
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("*, activities!inner(business_id)")
+        .eq("id", booking_id)
+        .eq("activities.business_id", user.id)
+        .single();
+      if (error || !data) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Booking not found or not your activity" }),
+          { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        );
+      }
+      booking = data;
+    } else {
+      // User cancelling: must belong to the authenticated user
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq("id", booking_id)
+        .eq("user_id", user.id)
+        .single();
+      if (error || !data) {
+        return new Response(
+          JSON.stringify({ error: "Booking not found" }),
+          { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        );
+      }
+      booking = data;
     }
 
     if (booking.status === "cancelled" || booking.status === "completed") {
@@ -59,11 +80,27 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check 24-hour cancellation policy
-    const activityDate = new Date(booking.date_time);
-    const now = new Date();
-    const hoursUntil = (activityDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-    const isRefundEligible = hoursUntil >= 24;
+    // Fetch activity to read per-activity cancellation policy
+    const { data: activity } = await supabase
+      .from("activities")
+      .select("cancellation_hours")
+      .eq("id", booking.activity_id)
+      .single();
+
+    const cancellationHours = activity?.cancellation_hours ?? 24;
+
+    // Businesses can cancel at any time; users are subject to the cancellation window
+    let isRefundEligible: boolean;
+    if (cancelledBy === "business") {
+      // Business-initiated cancellation always triggers a refund to the user
+      isRefundEligible = true;
+    } else {
+      // Check cancellation window using per-activity policy
+      const activityDate = new Date(booking.date_time);
+      const now = new Date();
+      const hoursUntil = (activityDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+      isRefundEligible = hoursUntil >= cancellationHours;
+    }
 
     // Cancel the booking
     const { error: cancelError } = await supabase
@@ -127,6 +164,25 @@ serve(async (req: Request) => {
       }
     }
 
+    // Notify the booker of cancellation (fire-and-forget)
+    // For business-initiated cancellations the booker is booking.user_id, not the caller
+    const notifyUserId = cancelledBy === "business" ? booking.user_id : user.id;
+    fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        user_ids: [notifyUserId],
+        title: "Booking Cancelled",
+        body: cancelledBy === "business"
+          ? "Your booking has been cancelled by the host."
+          : "Your booking has been cancelled.",
+        type: "booking_cancelled",
+      }),
+    }).catch((e) => console.error("Failed to send cancellation notification:", e));
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -134,7 +190,7 @@ serve(async (req: Request) => {
         refund_status: refundStatus,
         message: isRefundEligible
           ? "Booking cancelled. Refund has been requested and will be processed."
-          : "Booking cancelled. No refund — cancellation was less than 24 hours before the activity.",
+          : `Booking cancelled. No refund — cancellation was less than ${cancellationHours} hours before the activity.`,
       }),
       { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );

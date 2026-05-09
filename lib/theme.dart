@@ -75,22 +75,28 @@ class AppColors {
   static const Color lightSuccess = lime;
   static const Color lightDivider = Color(0xFFE0E0E0);
 
-  // Dark mode
-  static const Color darkPrimary = Color(0xFF4A47B8);
+  // Dark mode (2026-04 palette pass — warmer base, better hierarchy)
+  static const Color darkPrimary = Color(0xFF6E6AE8);
   static const Color darkOnPrimary = Color(0xFFFFFFFF);
-  static const Color darkSecondary = orange;
-  static const Color darkOnSecondary = Color(0xFFFFFFFF);
-  static const Color darkAccent = lime;
-  static const Color darkBackground = Color(0xFF0A0A0F);
-  static const Color darkSurface = Color(0xFF16161F);
-  static const Color darkOnSurface = Color(0xFFFFFFFF);
-  static const Color darkPrimaryText = Color(0xFFFFFFFF);
-  static const Color darkSecondaryText = Color(0xFFA0A0B8);
-  static const Color darkHint = Color(0xFF4A4A5E);
-  static const Color darkError = Color(0xFFFF453A);
+  static const Color darkSecondary = Color(0xFFF2A15E);
+  static const Color darkOnSecondary = Color(0xFF1A0F05);
+  static const Color darkAccent = Color(0xFFB6D25A);
+  static const Color darkBackground = Color(0xFF0F0D1A);
+  static const Color darkSurface = Color(0xFF1A1825);
+  static const Color darkSurfaceContainerLowest = Color(0xFF151322);
+  static const Color darkSurfaceContainerLow = Color(0xFF201D2E);
+  static const Color darkSurfaceContainer = Color(0xFF26223A);
+  static const Color darkSurfaceContainerHigh = Color(0xFF2D2947);
+  static const Color darkSurfaceContainerHighest = Color(0xFF353055);
+  static const Color darkOnSurface = Color(0xFFF0EEFF);
+  static const Color darkPrimaryText = Color(0xFFF0EEFF);
+  static const Color darkSecondaryText = Color(0xFFA39DBD);
+  static const Color darkHint = Color(0xFF6B6690);
+  static const Color darkError = Color(0xFFFF6B5F);
   static const Color darkOnError = Color(0xFFFFFFFF);
   static const Color darkSuccess = lime;
-  static const Color darkDivider = Color(0xFF25252E);
+  static const Color darkDivider = Color(0xFF3A3750);
+  static const Color darkOutline = Color(0xFF3A3750);
 }
 
 ThemeData get lightTheme => ThemeData(
@@ -145,10 +151,18 @@ ThemeData get darkTheme => ThemeData(
     secondary: AppColors.darkSecondary,
     onSecondary: AppColors.darkOnSecondary,
     tertiary: AppColors.darkAccent,
+    onTertiary: AppColors.darkOnPrimary,
     error: AppColors.darkError,
     onError: AppColors.darkOnError,
     surface: AppColors.darkSurface,
     onSurface: AppColors.darkOnSurface,
+    surfaceContainerLowest: AppColors.darkSurfaceContainerLowest,
+    surfaceContainerLow: AppColors.darkSurfaceContainerLow,
+    surfaceContainer: AppColors.darkSurfaceContainer,
+    surfaceContainerHigh: AppColors.darkSurfaceContainerHigh,
+    surfaceContainerHighest: AppColors.darkSurfaceContainerHighest,
+    outline: AppColors.darkOutline,
+    outlineVariant: AppColors.darkDivider,
   ),
   brightness: Brightness.dark,
   scaffoldBackgroundColor: AppColors.darkBackground,

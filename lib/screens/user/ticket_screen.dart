@@ -6,7 +6,7 @@ import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:hobby_haven/utils/booking_code.dart';
 
 class TicketScreen extends StatelessWidget {
   final String bookingId;
@@ -237,52 +237,47 @@ class TicketScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // QR Code Section
+                  // Booking Code Section
                   Container(
                     padding: AppSpacing.paddingLg,
                     decoration: BoxDecoration(
                       color: theme.scaffoldBackgroundColor,
                       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
                     ),
-                    child: Column(
-                      children: [
-                        Text(
-                          'Scan at entry',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: QrImageView(
-                            data: 'HOBBYTICKET:${booking.id}',
-                            version: QrVersions.auto,
-                            size: 160,
-                            backgroundColor: Colors.white,
-                            eyeStyle: const QrEyeStyle(
-                              eyeShape: QrEyeShape.square,
-                              color: AppColors.lightPrimaryText,
-                            ),
-                            dataModuleStyle: const QrDataModuleStyle(
-                              dataModuleShape: QrDataModuleShape.square,
-                              color: AppColors.lightPrimaryText,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: colorScheme.outlineVariant),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Booking Code',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.6),
+                              letterSpacing: 1.2,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
-                          booking.id.toUpperCase(),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.4),
-                            letterSpacing: 2,
+                          const SizedBox(height: 8),
+                          Text(
+                            bookingCodeFor(booking.id),
+                            style: theme.textTheme.displayMedium?.copyWith(
+                              color: colorScheme.primary,
+                              letterSpacing: 6,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text(
+                            'Show this code to the host',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

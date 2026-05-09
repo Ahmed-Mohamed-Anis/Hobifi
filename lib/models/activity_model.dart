@@ -19,6 +19,9 @@ class ActivityModel {
   final bool isInstantBooking;
   final bool isPublic;
   final List<String> features;
+  final double? latitude;
+  final double? longitude;
+  final int cancellationHours;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -43,6 +46,9 @@ class ActivityModel {
     required this.isInstantBooking,
     required this.isPublic,
     required this.features,
+    this.latitude,
+    this.longitude,
+    this.cancellationHours = 24,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -73,6 +79,9 @@ class ActivityModel {
     isInstantBooking: json['is_instant_booking'] as bool,
     isPublic: json['is_public'] as bool,
     features: List<String>.from(json['features'] as List),
+    latitude: (json['latitude'] as num?)?.toDouble(),
+    longitude: (json['longitude'] as num?)?.toDouble(),
+    cancellationHours: (json['cancellation_hours'] as int?) ?? 24,
     createdAt: DateTime.parse(json['created_at'] as String),
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
@@ -99,6 +108,9 @@ class ActivityModel {
     'is_instant_booking': isInstantBooking,
     'is_public': isPublic,
     'features': features,
+    if (latitude != null) 'latitude': latitude,
+    if (longitude != null) 'longitude': longitude,
+    'cancellation_hours': cancellationHours,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
   };
@@ -124,6 +136,9 @@ class ActivityModel {
     bool? isInstantBooking,
     bool? isPublic,
     List<String>? features,
+    double? latitude,
+    double? longitude,
+    int? cancellationHours,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => ActivityModel(
@@ -147,6 +162,9 @@ class ActivityModel {
     isInstantBooking: isInstantBooking ?? this.isInstantBooking,
     isPublic: isPublic ?? this.isPublic,
     features: features ?? this.features,
+    latitude: latitude ?? this.latitude,
+    longitude: longitude ?? this.longitude,
+    cancellationHours: cancellationHours ?? this.cancellationHours,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hobby_haven/models/user_model.dart';
+import 'package:hobby_haven/services/push_notification_service.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/auth/google_auth.dart';
 import 'package:hobby_haven/auth/apple_auth.dart';
@@ -10,16 +11,19 @@ class AuthService extends ChangeNotifier {
   bool _isLoading = false;
   bool _disposed = false;
   bool _suppressAuthListener = false;
+  bool _isInitializing = false;
   StreamSubscription<AuthState>? _authSub;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _currentUser != null;
+  bool get isInitializing => _isInitializing;
 
   Future<void> initialize() async {
     // Guard against double initialization
     if (_authSub != null) return;
 
+    _isInitializing = true;
     _isLoading = true;
     _safeNotify();
 
@@ -43,6 +47,7 @@ class AuthService extends ChangeNotifier {
       debugPrint('Failed to initialize auth: $e');
     } finally {
       _isLoading = false;
+      _isInitializing = false;
       _safeNotify();
     }
   }
@@ -74,6 +79,7 @@ class AuthService extends ChangeNotifier {
         enriched['email'] ??= SupabaseConfig.auth.currentUser?.email;
         _currentUser = UserModel.fromJson(enriched);
         _safeNotify();
+        PushNotificationService.registerToken(_currentUser!.id);
         return;
       }
 
@@ -105,6 +111,7 @@ class AuthService extends ChangeNotifier {
         enriched['email'] ??= email;
         _currentUser = UserModel.fromJson(enriched);
         _safeNotify();
+        PushNotificationService.registerToken(_currentUser!.id);
       }
     } catch (e) {
       debugPrint('Failed to load user: $e');
@@ -248,6 +255,7 @@ class AuthService extends ChangeNotifier {
     _safeNotify();
 
     try {
+      if (_currentUser != null) await PushNotificationService.unregisterToken(_currentUser!.id);
       await SupabaseConfig.auth.signOut();
       _currentUser = null;
     } catch (e) {
@@ -312,7 +320,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateProfile({String? name, String? avatarUrl, String? bio, List<String>? interests, String? city}) async {
+  Future<bool> updateProfile({String? name, String? avatarUrl, String? bio, List<String>? interests, String? city, String? phone}) async {
     if (_currentUser == null) return false;
 
     try {
@@ -322,6 +330,7 @@ class AuthService extends ChangeNotifier {
       if (bio != null) updates['bio'] = bio;
       if (interests != null) updates['interests'] = interests;
       if (city != null) updates['city'] = city;
+      if (phone != null) updates['phone'] = phone;
 
       if (updates.isEmpty) return false;
 
@@ -336,6 +345,41 @@ class AuthService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Failed to update profile: $e');
       return false;
+    }
+  }
+
+  /// Complete business onboarding: persists the business name + marks the
+  /// profile as onboarded. Category/city/description are collected in the UI
+  /// but not persisted yet (no columns on `public.users`).
+  Future<Map<String, dynamic>> completeBusinessOnboarding({
+    required String businessName,
+    required String category,
+    required String city,
+    String? description,
+  }) async {
+    try {
+      final uid = SupabaseConfig.auth.currentUser?.id ?? _currentUser?.id;
+      if (uid == null) {
+        return {'success': false, 'message': 'Not signed in'};
+      }
+
+      final updates = <String, dynamic>{
+        'name': businessName,
+        'business_onboarded': true,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      await SupabaseService.update(
+        'users',
+        updates,
+        filters: {'id': uid},
+      );
+
+      await _loadCurrentUser();
+      return {'success': true};
+    } catch (e) {
+      debugPrint('completeBusinessOnboarding failed: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 
@@ -382,6 +426,56 @@ class AuthService extends ChangeNotifier {
     } catch (e) {
       debugPrint('changeAvatar failed: $e');
       return false;
+    }
+  }
+
+  /// Verify the OTP code sent to email during sign-up
+  Future<Map<String, dynamic>> verifyEmailOTP(String email, String token) async {
+    _isLoading = true;
+    _safeNotify();
+    try {
+      final response = await SupabaseConfig.auth.verifyOTP(
+        email: email,
+        token: token,
+        type: OtpType.signup,
+      );
+      if (response.session == null) {
+        _isLoading = false;
+        _safeNotify();
+        return {'success': false, 'message': 'Invalid or expired verification code.'};
+      }
+      await _loadCurrentUser();
+      _isLoading = false;
+      _safeNotify();
+      return {'success': true};
+    } on AuthException catch (e) {
+      debugPrint('Email OTP verification failed: ${e.message}');
+      _isLoading = false;
+      _safeNotify();
+      String message = 'Invalid verification code.';
+      if (e.message.contains('expired')) {
+        message = 'Code has expired. Please request a new one.';
+      } else if (e.message.contains('already confirmed')) {
+        message = 'Email already verified. Please sign in.';
+      }
+      return {'success': false, 'message': message};
+    } catch (e) {
+      debugPrint('Email OTP verification failed: $e');
+      _isLoading = false;
+      _safeNotify();
+      return {'success': false, 'message': 'Verification failed. Please try again.'};
+    }
+  }
+
+  /// Resend the sign-up OTP code to the given email
+  Future<Map<String, dynamic>> resendSignupOTP(String email) async {
+    try {
+      await SupabaseConfig.auth.resend(type: OtpType.signup, email: email);
+      return {'success': true};
+    } on AuthException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to resend code. Please try again.'};
     }
   }
 

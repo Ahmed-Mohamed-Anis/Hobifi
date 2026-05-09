@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
+import 'package:hobby_haven/services/wallet_service.dart';
+import 'package:hobby_haven/models/activity_model.dart';
+import 'package:hobby_haven/models/booking_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
+import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/hobifi_stat_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
+import 'package:hobby_haven/services/notification_service.dart';
+import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -26,10 +34,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<Map<String, _PerActivityStats>>? _perActivityFuture;
   Future<List<_EarningsTransaction>>? _earningsFuture;
   int _selectedDays = 7; // 7, 30, or 90
+  String _activitySortBy = 'revenue'; // 'revenue' | 'bookings' | 'fillRate'
+  String _chartType = 'revenue'; // 'revenue' | 'bookings' | 'fillRate'
+  Future<List<_DailyRevenue>>? _bookingsFuture;
+  Future<List<_DailyRevenue>>? _fillRateFuture;
 
   void _initDashboard(String businessId) {
     _statsFuture = _fetchStats(businessId);
     _revenueFuture = _fetchRevenueChart(businessId);
+    _bookingsFuture = _fetchBookingsChart(businessId);
+    _fillRateFuture = _fetchFillRateChart(businessId);
     _perActivityFuture = _fetchPerActivityStats(businessId);
     _earningsFuture = _fetchEarningsHistory(businessId);
   }
@@ -99,6 +113,124 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<List<_DailyRevenue>> _fetchBookingsChart(String businessId) async {
+    try {
+      final acts = await SupabaseService.select('activities',
+          select: 'id', filters: {'business_id': businessId});
+      final activityIds =
+          acts.map((e) => e['id'] as String).whereType<String>().toList();
+      if (activityIds.isEmpty) return _generateEmptyDays();
+
+      final now = DateTime.now();
+      final startDate = now.subtract(Duration(days: _selectedDays - 1));
+
+      final rows = await SupabaseService.from('bookings')
+          .select('created_at')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', startDate.toIso8601String()) as List<dynamic>;
+
+      final Map<String, double> dailyCounts = {};
+      for (int i = 0; i < _selectedDays; i++) {
+        final day = DateTime(startDate.year, startDate.month, startDate.day)
+            .add(Duration(days: i));
+        final key =
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+        dailyCounts[key] = 0.0;
+      }
+
+      for (final row in rows) {
+        final d = DateTime.parse(row['created_at'] as String);
+        final key =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        if (dailyCounts.containsKey(key)) dailyCounts[key] = dailyCounts[key]! + 1;
+      }
+
+      final sortedKeys = dailyCounts.keys.toList()..sort();
+      return sortedKeys.asMap().entries.map((entry) {
+        final date = DateTime.parse(entry.value);
+        return _DailyRevenue(
+            dayIndex: entry.key,
+            amount: dailyCounts[entry.value] ?? 0.0,
+            date: date);
+      }).toList();
+    } catch (e) {
+      debugPrint('_fetchBookingsChart failed: $e');
+      return _generateEmptyDays();
+    }
+  }
+
+  Future<List<_DailyRevenue>> _fetchFillRateChart(String businessId) async {
+    try {
+      final acts = await SupabaseService.select('activities',
+          select: 'id,max_guests', filters: {'business_id': businessId});
+      final activityIds =
+          acts.map((e) => e['id'] as String).whereType<String>().toList();
+      if (activityIds.isEmpty) return _generateEmptyDays();
+
+      final maxGuestsByActivity = <String, int>{
+        for (final a in acts)
+          a['id'] as String: (a['max_guests'] as num?)?.toInt() ?? 0,
+      };
+
+      final now = DateTime.now();
+      final startDate = now.subtract(Duration(days: _selectedDays - 1));
+
+      final rows = await SupabaseService.from('bookings')
+          .select('created_at,activity_id')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', startDate.toIso8601String()) as List<dynamic>;
+
+      final Map<String, Map<String, int>> dailyActivityBookings = {};
+      for (int i = 0; i < _selectedDays; i++) {
+        final day = DateTime(startDate.year, startDate.month, startDate.day)
+            .add(Duration(days: i));
+        final key =
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+        dailyActivityBookings[key] = {};
+      }
+
+      for (final row in rows) {
+        final d = DateTime.parse(row['created_at'] as String);
+        final key =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        final actId = row['activity_id'] as String;
+        if (dailyActivityBookings.containsKey(key)) {
+          dailyActivityBookings[key]![actId] =
+              (dailyActivityBookings[key]![actId] ?? 0) + 1;
+        }
+      }
+
+      final sortedKeys = dailyActivityBookings.keys.toList()..sort();
+      return sortedKeys.asMap().entries.map((entry) {
+        final dayKey = entry.value;
+        final date = DateTime.parse(dayKey);
+        final bookingsByActivity = dailyActivityBookings[dayKey]!;
+
+        double fillRate = 0.0;
+        if (bookingsByActivity.isNotEmpty) {
+          double totalFillRate = 0.0;
+          int counted = 0;
+          for (final actId in bookingsByActivity.keys) {
+            final max = maxGuestsByActivity[actId] ?? 0;
+            if (max > 0) {
+              totalFillRate +=
+                  (bookingsByActivity[actId]! / max * 100).clamp(0.0, 100.0);
+              counted++;
+            }
+          }
+          if (counted > 0) fillRate = totalFillRate / counted;
+        }
+
+        return _DailyRevenue(dayIndex: entry.key, amount: fillRate, date: date);
+      }).toList();
+    } catch (e) {
+      debugPrint('_fetchFillRateChart failed: $e');
+      return _generateEmptyDays();
+    }
+  }
+
   /// Fetch recent payment transactions for Earnings History
   Future<List<_EarningsTransaction>> _fetchEarningsHistory(
       String businessId) async {
@@ -116,6 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final paymentsRows = await SupabaseService.from('payments')
           .select('id,activity_id,business_earnings,created_at,status')
           .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
           .order('created_at', ascending: false)
           .limit(10) as List<dynamic>;
 
@@ -147,7 +280,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             earnings: 0, bookings: 0, likes: 0, avgRating: 0.0);
       }
 
-// Fetch paid bookings, payments, likes, and ratings in parallel
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
+      final twoWeeksAgo = now.subtract(const Duration(days: 14));
+
+// Fetch paid bookings, payments, likes, ratings, and weekly deltas in parallel
       final bookingsFuture = SupabaseService.from('bookings')
           .select('price,status,activity_id')
           .inFilter('activity_id', activityIds)
@@ -162,13 +299,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final ratingsFuture = SupabaseService.from('ratings')
           .select('rating')
           .inFilter('activity_id', activityIds);
+      // This week's payments (last 7 days)
+      final paymentsThisWeekFuture = SupabaseService.from('payments')
+          .select('business_earnings,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
+          .gte('created_at', weekAgo.toIso8601String());
+      // Last week's payments (7–14 days ago)
+      final paymentsLastWeekFuture = SupabaseService.from('payments')
+          .select('business_earnings,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .eq('status', 'completed')
+          .gte('created_at', twoWeeksAgo.toIso8601String())
+          .lt('created_at', weekAgo.toIso8601String());
+      // This week's bookings
+      final bookingsThisWeekFuture = SupabaseService.from('bookings')
+          .select('id,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', weekAgo.toIso8601String());
+      // Last week's bookings
+      final bookingsLastWeekFuture = SupabaseService.from('bookings')
+          .select('id,created_at,status')
+          .inFilter('activity_id', activityIds)
+          .inFilter('status', ['confirmed', 'completed'])
+          .gte('created_at', twoWeeksAgo.toIso8601String())
+          .lt('created_at', weekAgo.toIso8601String());
 
-      final results = await Future.wait(
-          [bookingsFuture, paymentsFuture, likesFuture, ratingsFuture]);
+      final results = await Future.wait([
+        bookingsFuture,
+        paymentsFuture,
+        likesFuture,
+        ratingsFuture,
+        paymentsThisWeekFuture,
+        paymentsLastWeekFuture,
+        bookingsThisWeekFuture,
+        bookingsLastWeekFuture,
+      ]);
       final bookingsRows = (results[0] as List).cast<Map<String, dynamic>>();
       final paymentsRows = (results[1] as List).cast<Map<String, dynamic>>();
       final likesRows = (results[2] as List);
       final ratingsRows = (results[3] as List);
+      final paymentsThisWeek = (results[4] as List).cast<Map<String, dynamic>>();
+      final paymentsLastWeek = (results[5] as List).cast<Map<String, dynamic>>();
+      final bookingsThisWeek = (results[6] as List);
+      final bookingsLastWeek = (results[7] as List);
 
 // Use business_earnings from payments (already has 10% deducted)
 // If no payments table yet, fallback to bookings with 10% deduction
@@ -197,11 +372,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
         avgRating = totalRating / ratingsRows.length;
       }
 
+// Compute week-over-week earnings trend
+      final earningsThisWeek = paymentsThisWeek.fold<double>(
+          0.0,
+          (sum, row) =>
+              sum + ((row['business_earnings'] as num?)?.toDouble() ?? 0.0));
+      final earningsLastWeek = paymentsLastWeek.fold<double>(
+          0.0,
+          (sum, row) =>
+              sum + ((row['business_earnings'] as num?)?.toDouble() ?? 0.0));
+
+      String? earningsTrendStr;
+      bool earningsTrendUp = true;
+      if (earningsLastWeek > 0) {
+        final pct =
+            ((earningsThisWeek - earningsLastWeek) / earningsLastWeek * 100)
+                .round();
+        earningsTrendUp = pct >= 0;
+        earningsTrendStr = pct >= 0 ? '+$pct%' : '$pct%';
+      }
+
+// Compute week-over-week bookings trend
+      final bookingsThisWeekCount = bookingsThisWeek.length;
+      final bookingsLastWeekCount = bookingsLastWeek.length;
+
+      String? bookingsTrendStr;
+      bool bookingsTrendUp = true;
+      if (bookingsLastWeekCount > 0) {
+        final pct = ((bookingsThisWeekCount - bookingsLastWeekCount) /
+                    bookingsLastWeekCount *
+                    100)
+                .round();
+        bookingsTrendUp = pct >= 0;
+        bookingsTrendStr = pct >= 0 ? '+$pct%' : '$pct%';
+      }
+
       return _BusinessStats(
           earnings: earnings,
           bookings: bookings,
           likes: likes,
-          avgRating: avgRating);
+          avgRating: avgRating,
+          earningsTrend: earningsTrendStr,
+          earningsTrendUp: earningsTrendUp,
+          bookingsTrend: bookingsTrendStr,
+          bookingsTrendUp: bookingsTrendUp);
     } catch (e) {
       debugPrint('Dashboard _fetchStats failed: $e');
       return const _BusinessStats(
@@ -256,19 +470,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         paymentEarnings[aId] = (paymentEarnings[aId] ?? 0.0) + earnings;
       }
 
-// Aggregate bookings and revenue (use payment earnings if available, else 90% of booking price)
+// Aggregate confirmed bookings count
       for (final rowDynamic in bookingsRows) {
         final row = rowDynamic as Map<String, dynamic>;
         final String aId = row['activity_id'] as String;
-        final double price = (row['price'] as num?)?.toDouble() ?? 0.0;
         final current = map[aId] ??
             const _PerActivityStats(
                 bookings: 0, revenue: 0.0, likes: 0, avgRating: 0.0);
-// Use 90% of price (after 10% platform fee)
-        final revenue = price * 0.9;
         map[aId] = _PerActivityStats(
             bookings: current.bookings + 1,
-            revenue: current.revenue + revenue,
+            revenue: paymentEarnings[aId] ?? 0.0,
             likes: current.likes,
             avgRating: current.avgRating);
       }
@@ -317,6 +528,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  static const _chartOptions = [
+    ('revenue', 'Revenue'),
+    ('bookings', 'Bookings'),
+    ('fillRate', 'Fill Rate'),
+  ];
+
+  static const _sortOptions = [
+    ('revenue', 'Revenue'),
+    ('bookings', 'Bookings'),
+    ('fillRate', 'Fill Rate'),
+  ];
+
+  List<ActivityModel> _sortedActivities(
+    List<ActivityModel> activities,
+    Map<String, _PerActivityStats> agg,
+  ) {
+    final sorted = List<ActivityModel>.from(activities);
+    switch (_activitySortBy) {
+      case 'revenue':
+        sorted.sort((a, b) =>
+            (agg[b.id]?.revenue ?? 0).compareTo(agg[a.id]?.revenue ?? 0));
+      case 'bookings':
+        sorted.sort((a, b) =>
+            (agg[b.id]?.bookings ?? 0).compareTo(agg[a.id]?.bookings ?? 0));
+      case 'fillRate':
+        sorted.sort((a, b) {
+          double rate(ActivityModel x) =>
+              x.maxGuests > 0 ? (x.maxGuests - x.spotsLeft) / x.maxGuests : 0.0;
+          return rate(b).compareTo(rate(a));
+        });
+    }
+    return sorted;
+  }
+
   String _greeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
@@ -330,8 +575,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final auth = context.read<AuthService>();
       final bookings = context.read<BookingService>();
+      final wallet = context.read<WalletService>();
       if (auth.currentUser != null) {
         await bookings.loadBusinessBookings(auth.currentUser!.id);
+        wallet.loadWallet(auth.currentUser!.id);
       }
     });
   }
@@ -341,8 +588,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final activityService = context.watch<ActivityService>();
-    context.watch<BookingService>(); // Keep reactive but unused directly
+    final bookingService = context.watch<BookingService>();
+    final walletService = context.watch<WalletService>();
     final authService = context.watch<AuthService>();
+    final notifService = context.watch<NotificationService>();
     final user = authService.currentUser;
     final userId = user?.id;
 
@@ -351,9 +600,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _initDashboard(userId);
     }
 
-    final businessActivities = userId == null
+    final List<ActivityModel> businessActivities = userId == null
         ? const []
         : activityService.getActivitiesByBusinessId(userId);
+
+    // Today's confirmed bookings, sorted by time
+    final now = DateTime.now();
+    final todayBookings = bookingService.businessBookings.where((b) {
+      return b.dateTime.year == now.year &&
+          b.dateTime.month == now.month &&
+          b.dateTime.day == now.day &&
+          b.status == BookingStatus.confirmed;
+    }).toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
     return Scaffold(
       body: SafeArea(
@@ -392,6 +651,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
+                      // Bell icon with badge
+                      if (userId != null)
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            IconButton(
+                              onPressed: () => _showNotificationsSheet(context, notifService, userId),
+                              style: IconButton.styleFrom(
+                                backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                              ),
+                              icon: Icon(Icons.notifications_outlined, color: colorScheme.primary),
+                            ),
+                            if (notifService.unreadCount > 0)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      notifService.unreadCount > 9 ? '9+' : '${notifService.unreadCount}',
+                                      style: TextStyle(color: colorScheme.onError, fontSize: 9, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (userId != null) const SizedBox(width: 8),
                       // Wallet button
                       IconButton(
                         onPressed: () =>
@@ -437,6 +730,120 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
 
+                // ── Today's Schedule ────────────────────────────────
+                if (userId != null && todayBookings.isNotEmpty) ...[
+                  HobifiSectionHeader(
+                    title: "Today's Schedule",
+                    subtitle: '${todayBookings.length} confirmed',
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: todayBookings.map((booking) {
+                        return GestureDetector(
+                          onTap: () => context
+                              .push('${AppRoutes.ticket}/${booking.id}'),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.12)),
+                            ),
+                            child: Row(
+                              children: [
+                                // Time badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.1),
+                                    borderRadius:
+                                        BorderRadius.circular(9999),
+                                  ),
+                                  child: Text(
+                                    DateFormat('h:mm a')
+                                        .format(booking.dateTime),
+                                    style:
+                                        theme.textTheme.labelSmall?.copyWith(
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Title + location
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        booking.activityTitle,
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.location_on_rounded,
+                                            size: 12,
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.4),
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Expanded(
+                                            child: Text(
+                                              booking.location,
+                                              style: theme
+                                                  .textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: colorScheme.onSurface
+                                                    .withValues(alpha: 0.5),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+
+                // ── All Bookings CTA ────────────────────────────────
+                if (userId != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: OutlinedButton.icon(
+                      onPressed: () => context.push(AppRoutes.businessBookings),
+                      icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                      label: const Text('All Bookings'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // ── Stat Cards (horizontal scroll) ──────────────────
                 if (userId == null)
                   _buildStatCardsShimmer()
@@ -464,12 +871,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               label: 'Total Revenue',
                               value:
                                   'EGP ${stats.earnings.toStringAsFixed(0)}',
+                              trend: stats.earningsTrend,
+                              trendPositive: stats.earningsTrendUp,
                             ),
                             const SizedBox(width: 12),
                             HobifiStatCard(
                               icon: Icons.confirmation_number_rounded,
                               label: 'Total Bookings',
                               value: stats.bookings.toString(),
+                              trend: stats.bookingsTrend,
+                              trendPositive: stats.bookingsTrendUp,
                             ),
                             const SizedBox(width: 12),
                             HobifiStatCard(
@@ -483,27 +894,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     },
                   ),
 
-                // ── Revenue Chart ────────────────────────────────────
-                if (userId != null) ...[
-                  // Period selector
+                // ── Wallet Balance Card ──────────────────────────────
+                if (userId != null)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: walletService.isLoading
+                        ? HobifiShimmer(
+                            width: double.infinity,
+                            height: 72,
+                            borderRadius: 16)
+                        : Container(
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.15)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  offset: const Offset(0, 4),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                // Wallet icon circle
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: colorScheme.primary
+                                        .withValues(alpha: 0.1),
+                                  ),
+                                  child: Icon(
+                                    Icons.account_balance_wallet_rounded,
+                                    color: colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Balance column
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Available Balance',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: colorScheme.onSurface
+                                              .withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                      Text(
+                                        'EGP ${walletService.balance.toStringAsFixed(2)}',
+                                        style: theme.textTheme.titleLarge
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.bold),
+                                      ),
+                                      if (walletService.pendingPayouts > 0)
+                                        Text(
+                                          'EGP ${walletService.pendingPayouts.toStringAsFixed(2)} pending',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.45),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                // Withdraw button
+                                TextButton(
+                                  onPressed: () => context
+                                      .push(AppRoutes.businessWallet),
+                                  child: const Text('Withdraw'),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+
+                // ── Analytics Charts ─────────────────────────────────
+                if (userId != null) ...[
+                  // Chart type selector
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                     child: Row(
                       children: [
-                        for (final days in [7, 30, 90])
-                          HobifiChip(
-                            label: '${days}d',
-                            isSelected: _selectedDays == days,
-                            onTap: () {
-                              setState(() => _selectedDays = days);
-                              _refreshDashboard(userId);
-                            },
+                        for (final (key, label) in _chartOptions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: HobifiChip(
+                              label: label,
+                              isSelected: _chartType == key,
+                              onTap: () => setState(() => _chartType = key),
+                            ),
                           ),
                       ],
                     ),
                   ),
+                  // Period selector
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    child: Row(
+                      children: [
+                        for (final days in [7, 30, 90])
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: HobifiChip(
+                              label: '${days}d',
+                              isSelected: _selectedDays == days,
+                              onTap: () {
+                                setState(() => _selectedDays = days);
+                                _refreshDashboard(userId);
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Chart area
                   FutureBuilder<List<_DailyRevenue>>(
-                    future: _revenueFuture,
+                    future: _chartType == 'revenue'
+                        ? _revenueFuture
+                        : _chartType == 'bookings'
+                            ? _bookingsFuture
+                            : _fillRateFuture,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState ==
                               ConnectionState.waiting &&
@@ -516,24 +1039,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: 20),
                         );
                       }
-                      final revenueData =
+                      final chartData =
                           snapshot.data ?? _generateEmptyDays();
-                      final maxY = revenueData
+                      final maxY = chartData
                           .map((e) => e.amount)
                           .fold<double>(0.0, (a, b) => a > b ? a : b);
-                      final spots = revenueData
+                      final spots = chartData
                           .map((e) =>
                               FlSpot(e.dayIndex.toDouble(), e.amount))
                           .toList();
-                      const weekdays = [
-                        'Mon',
-                        'Tue',
-                        'Wed',
-                        'Thu',
-                        'Fri',
-                        'Sat',
-                        'Sun'
-                      ];
+
+                      final chartTitle = switch (_chartType) {
+                        'revenue' => 'Revenue Trend (EGP)',
+                        'bookings' => 'Daily Bookings',
+                        _ => 'Fill Rate (%)',
+                      };
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -554,7 +1074,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Revenue Trend',
+                                chartTitle,
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -564,11 +1084,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 height: 180,
                                 child: LineChart(
                                   LineChartData(
+                                    minY: 0,
+                                    maxY: _chartType == 'fillRate'
+                                        ? 100
+                                        : (maxY > 0 ? maxY * 1.2 : 10),
                                     gridData: FlGridData(
                                       show: true,
                                       drawVerticalLine: false,
-                                      horizontalInterval:
-                                          maxY > 0 ? maxY / 4 : 25,
+                                      horizontalInterval: _chartType == 'fillRate'
+                                          ? 25
+                                          : (maxY > 0 ? maxY / 4 : 25),
                                       getDrawingHorizontalLine: (value) =>
                                           FlLine(
                                         color: colorScheme.outline
@@ -582,64 +1107,76 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         sideTitles: SideTitles(
                                           showTitles: true,
                                           getTitlesWidget: (value, meta) {
-                                            if (value.toInt() < 0 ||
-                                                value.toInt() >=
-                                                    revenueData.length) {
+                                            if (value != value.roundToDouble()) {
                                               return const SizedBox.shrink();
                                             }
-                                            // For >7 days only show every nth label
-                                            if (_selectedDays > 7 &&
-                                                value.toInt() %
-                                                        (_selectedDays ~/
-                                                            7) !=
-                                                    0) {
+                                            final idx = value.toInt();
+                                            if (idx < 0 || idx >= chartData.length) {
                                               return const SizedBox.shrink();
                                             }
-                                            final day = revenueData[
-                                                    value.toInt()]
-                                                .date;
+                                            final step = _selectedDays <= 7
+                                                ? 1
+                                                : _selectedDays <= 30
+                                                    ? 5
+                                                    : 15;
+                                            if (idx % step != 0) return const SizedBox.shrink();
+                                            final day = chartData[idx].date;
+                                            const months = [
+                                              'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                                            ];
+                                            final lbl = _selectedDays == 7
+                                                ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                                                    [day.weekday - 1]
+                                                : '${day.day} ${months[day.month - 1]}';
                                             return Padding(
-                                              padding: const EdgeInsets.only(
-                                                  top: 8),
-                                              child: Text(
-                                                weekdays[day.weekday - 1],
-                                                style: theme
-                                                    .textTheme.labelSmall
-                                                    ?.copyWith(
-                                                  color: colorScheme.onSurface
-                                                      .withValues(alpha: 0.4),
-                                                ),
-                                              ),
+                                              padding: const EdgeInsets.only(top: 4),
+                                              child: Text(lbl,
+                                                style: theme.textTheme.labelSmall?.copyWith(
+                                                  color: colorScheme.onSurface.withValues(alpha: 0.4),
+                                                )),
                                             );
                                           },
-                                          reservedSize: 28,
+                                          reservedSize: 30,
                                         ),
                                       ),
-                                      leftTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                      leftTitles: AxisTitles(
+                                        sideTitles: SideTitles(
+                                          showTitles: true,
+                                          reservedSize: 44,
+                                          getTitlesWidget: (value, meta) {
+                                            if (value == meta.min || value == meta.max) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final lbl = _chartType == 'fillRate'
+                                                ? '${value.toInt()}%'
+                                                : value >= 1000
+                                                    ? '${(value / 1000).toStringAsFixed(1)}k'
+                                                    : value.toInt().toString();
+                                            return Text(lbl,
+                                              style: theme.textTheme.labelSmall?.copyWith(
+                                                color: colorScheme.onSurface.withValues(alpha: 0.4),
+                                              ));
+                                          },
+                                        ),
+                                      ),
                                       topTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                          sideTitles: SideTitles(showTitles: false)),
                                       rightTitles: const AxisTitles(
-                                          sideTitles:
-                                              SideTitles(showTitles: false)),
+                                          sideTitles: SideTitles(showTitles: false)),
                                     ),
                                     borderData: FlBorderData(show: false),
-                                    minY: 0,
-                                    maxY: maxY > 0 ? maxY * 1.2 : 100,
                                     lineBarsData: [
                                       LineChartBarData(
                                         spots: spots,
                                         isCurved: true,
                                         color: colorScheme.primary,
-                                        barWidth: 3,
+                                        barWidth: 2.5,
                                         dotData: FlDotData(
-                                          show: true,
-                                          getDotPainter: (spot, percent,
-                                                  bar, index) =>
+                                          show: _selectedDays == 7,
+                                          getDotPainter: (spot, _, __, ___) =>
                                               FlDotCirclePainter(
-                                            radius: 3,
+                                            radius: 4,
                                             color: colorScheme.primary,
                                             strokeWidth: 2,
                                             strokeColor: colorScheme.surface,
@@ -652,7 +1189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                             end: Alignment.bottomCenter,
                                             colors: [
                                               colorScheme.primary
-                                                  .withValues(alpha: 0.3),
+                                                  .withValues(alpha: 0.15),
                                               colorScheme.primary
                                                   .withValues(alpha: 0.0),
                                             ],
@@ -677,60 +1214,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Your Activities',
                     onSeeAll: businessActivities.isEmpty
                         ? null
-                        : () => context
-                            .push(AppRoutes.businessCreateActivity),
+                        : () => context.push(AppRoutes.businessCreateActivity),
                   ),
+                  // Sort control tabs
+                  if (businessActivities.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Row(
+                        children: [
+                          for (final (key, label) in _sortOptions)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: HobifiChip(
+                                label: label,
+                                isSelected: _activitySortBy == key,
+                                onTap: () => setState(() => _activitySortBy = key),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   if (businessActivities.isEmpty)
                     _buildEmptyActivitiesCTA(context)
                   else
                     FutureBuilder<Map<String, _PerActivityStats>>(
                       future: _perActivityFuture,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting &&
+                        if (snapshot.connectionState == ConnectionState.waiting &&
                             snapshot.data == null) {
                           return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Column(
                               children: List.generate(
-                                2,
+                                3,
                                 (_) => Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.only(bottom: 12),
                                   child: HobifiShimmer(
-                                      width: double.infinity,
-                                      height: 100,
-                                      borderRadius: 16),
+                                      width: double.infinity, height: 100, borderRadius: 16),
                                 ),
                               ),
                             ),
                           );
                         }
-                        final agg = snapshot.data ??
-                            const <String, _PerActivityStats>{};
-                        final activitiesToShow =
-                            businessActivities.take(3).toList();
+                        final agg = snapshot.data ?? const <String, _PerActivityStats>{};
+                        final activitiesToShow = _sortedActivities(businessActivities, agg);
                         return Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Column(
                             children: activitiesToShow.map((activity) {
                               final stats = agg[activity.id];
-                              final bookingsCount = stats?.bookings ?? 0;
-                              final revenueVal = stats?.revenue ?? 0.0;
-                              // Estimate fill rate from bookings vs total capacity
-                              final totalCapacity =
-                                  bookingsCount + activity.spotsLeft;
-                              final fillRate = totalCapacity > 0
-                                  ? (bookingsCount / totalCapacity)
+                              final fillRate = activity.maxGuests > 0
+                                  ? ((activity.maxGuests - activity.spotsLeft) /
+                                          activity.maxGuests)
                                       .clamp(0.0, 1.0)
                                   : 0.0;
                               return _ActivityBreakdownCard(
                                 title: activity.title,
-                                bookings: bookingsCount,
-                                revenue: revenueVal,
+                                imageUrl: activity.imageUrl,
+                                bookings: stats?.bookings ?? 0,
+                                revenue: stats?.revenue ?? 0.0,
                                 fillRate: fillRate,
+                                avgRating: stats?.avgRating ?? 0.0,
                                 onTap: () {
                                   final loc = context.namedLocation(
                                     'business-activity',
@@ -750,7 +1294,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (userId != null) ...[
                   HobifiSectionHeader(
                     title: 'Recent Earnings',
-                    subtitle: '90% goes to you',
                     onSeeAll: () =>
                         context.push(AppRoutes.businessWallet),
                   ),
@@ -862,6 +1405,124 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _showNotificationsSheet(
+    BuildContext context,
+    NotificationService notifService,
+    String userId,
+  ) {
+    notifService.markAllRead(userId);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.35,
+        expand: false,
+        builder: (ctx, sc) {
+          final notifications = notifService.notifications;
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                child: Row(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(
+                          color: colorScheme.outline.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text('Notifications',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    const SizedBox(width: 40),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: notifications.isEmpty
+                    ? HobifiEmptyState(
+                        icon: Icons.notifications_off_outlined,
+                        title: 'No notifications yet',
+                      )
+                    : ListView.builder(
+                        controller: sc,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: notifications.length,
+                        itemBuilder: (_, i) {
+                          final n = notifications[i];
+                          final isUnread = !n.read;
+                          final now = DateTime.now();
+                          final diff = now.difference(n.createdAt);
+                          final timeLabel = diff.inDays == 0
+                              ? 'Today'
+                              : diff.inDays == 1
+                                  ? 'Yesterday'
+                                  : '${diff.inDays} days ago';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border(
+                                left: BorderSide(
+                                  color: isUnread
+                                      ? colorScheme.primary
+                                      : Colors.transparent,
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(n.title,
+                                          style: theme.textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.bold)),
+                                      ),
+                                      Text(timeLabel,
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.4))),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(n.body,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurface.withValues(alpha: 0.6))),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildStatCardsShimmer() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -932,11 +1593,20 @@ class _BusinessStats {
   final int bookings;
   final int likes;
   final double avgRating;
-  const _BusinessStats(
-      {required this.earnings,
-      required this.bookings,
-      required this.likes,
-      required this.avgRating});
+  final String? earningsTrend;
+  final bool earningsTrendUp;
+  final String? bookingsTrend;
+  final bool bookingsTrendUp;
+  const _BusinessStats({
+    required this.earnings,
+    required this.bookings,
+    required this.likes,
+    required this.avgRating,
+    this.earningsTrend,
+    this.earningsTrendUp = true,
+    this.bookingsTrend,
+    this.bookingsTrendUp = true,
+  });
 }
 
 class _PerActivityStats {
@@ -1107,16 +1777,20 @@ class _EarningsRow extends StatelessWidget {
 
 class _ActivityBreakdownCard extends StatelessWidget {
   final String title;
+  final String imageUrl;
   final int bookings;
   final double revenue;
   final double fillRate;
+  final double avgRating;
   final VoidCallback? onTap;
 
   const _ActivityBreakdownCard({
     required this.title,
+    required this.imageUrl,
     required this.bookings,
     required this.revenue,
     required this.fillRate,
+    required this.avgRating,
     this.onTap,
   });
 
@@ -1146,64 +1820,75 @@ class _ActivityBreakdownCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: 52, height: 52, fit: BoxFit.cover,
+                    placeholder: (_, __) => HobifiShimmer.box(52, 52),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 52, height: 52,
+                      color: colorScheme.surfaceContainerHighest,
+                      child: Icon(Icons.image_rounded, color: colorScheme.outline, size: 20),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'EGP ${revenue.toStringAsFixed(0)}',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.confirmation_number_outlined,
-                      size: 14,
-                      color: colorScheme.onSurface.withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$bookings bookings',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('EGP ${revenue.toStringAsFixed(0)}',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: colorScheme.primary, fontWeight: FontWeight.w800)),
+                        ],
                       ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${(fillRate * 100).toStringAsFixed(0)}% full',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.confirmation_number_outlined, size: 13,
+                            color: colorScheme.onSurface.withValues(alpha: 0.4)),
+                          const SizedBox(width: 3),
+                          Text('$bookings bookings',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.5))),
+                          const Spacer(),
+                          if (avgRating > 0) ...[
+                            Icon(Icons.star_rounded, size: 13, color: colorScheme.tertiary),
+                            const SizedBox(width: 2),
+                            Text(avgRating.toStringAsFixed(1),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.6))),
+                          ] else ...[
+                            Text('${(fillRate * 100).toStringAsFixed(0)}% full',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.5))),
+                          ],
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: fillRate,
-                  borderRadius: BorderRadius.circular(4),
-                  backgroundColor:
-                      colorScheme.outline.withValues(alpha: 0.1),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF9BC53D)), // lime
-                  minHeight: 6,
+                      const SizedBox(height: 6),
+                      LinearProgressIndicator(
+                        value: fillRate,
+                        borderRadius: BorderRadius.circular(4),
+                        backgroundColor: colorScheme.outline.withValues(alpha: 0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.lime),
+                        minHeight: 6,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

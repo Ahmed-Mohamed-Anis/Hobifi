@@ -9,7 +9,6 @@ import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/services/auth_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/activity_service.dart';
-import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/theme.dart';
@@ -32,7 +31,6 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
 
     final authService = context.read<AuthService>();
     final bookingService = context.read<BookingService>();
-    final paymentService = context.read<PaymentService>();
     final activityService = context.read<ActivityService>();
 
     final user = authService.currentUser;
@@ -58,7 +56,9 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
           final reason = result['reason'] as String? ?? 'unknown';
           final message = reason == 'no_spots'
               ? 'Sorry, this activity just sold out!'
-              : 'Could not create booking. Please try again.';
+              : reason == 'already_booked'
+                  ? 'You already have a booking for this activity.'
+                  : 'Could not create booking. Please try again.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message)),
           );
@@ -69,23 +69,12 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
 
       bookingId = result['booking_id'] as String;
 
-      // Initialize payment
-      final paymentData = await paymentService.initializePayment(
-        bookingId: bookingId,
-        userId: user.id,
-        activityId: activity.id,
-        amount: activity.price,
-        activityTitle: activity.title,
-        userEmail: user.email,
-        userName: user.name,
-        userPhone: user.phone ?? '',
-      );
-
+      // Navigate straight to the payment screen — it handles method selection
+      // (saved card vs new card) and calls initializePayment itself.
       if (mounted) {
         context.push(
           '${AppRoutes.payment}/$bookingId',
           extra: {
-            'paymentUrl': paymentData['iframe_url'],
             'activityId': activity.id,
             'activityTitle': activity.title,
             'amount': activity.price,
@@ -93,8 +82,7 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
         );
       }
     } catch (e) {
-      debugPrint('Payment initialization failed: $e');
-      // If booking was created but payment init failed, release the spot
+      debugPrint('Booking failed: $e');
       if (bookingId != null) {
         try {
           await SupabaseConfig.client.rpc(
@@ -245,27 +233,35 @@ class _BookingConfirmScreenState extends State<BookingConfirmScreen> {
                     const SizedBox(height: 16),
 
                     // Cancellation policy
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Free cancellation up to 24 hours before the activity',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.primary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                    Builder(
+                      builder: (context) {
+                        final hours = activity.cancellationHours;
+                        final policyText = hours == 0
+                            ? 'Non-refundable'
+                            : 'Cancel up to $hours hour${hours == 1 ? '' : 's'} before for a full refund';
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 20, color: colorScheme.primary),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  policyText,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

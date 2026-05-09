@@ -11,6 +11,7 @@ class UserModel {
   final String? bio;
   final List<String> interests;
   final String? city;
+  final bool businessOnboarded;
 
   UserModel({
     required this.id,
@@ -25,6 +26,7 @@ class UserModel {
     this.bio,
     this.interests = const [],
     this.city,
+    this.businessOnboarded = false,
   });
 
   static DateTime _parseDate(dynamic v) {
@@ -47,6 +49,7 @@ class UserModel {
     bio: json['bio'] as String?,
     interests: (json['interests'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
     city: json['city'] as String?,
+    businessOnboarded: (json['business_onboarded'] as bool?) ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -62,6 +65,7 @@ class UserModel {
     if (bio != null) 'bio': bio,
     'interests': interests,
     if (city != null) 'city': city,
+    'business_onboarded': businessOnboarded,
   };
 
   UserModel copyWith({
@@ -77,6 +81,7 @@ class UserModel {
     String? bio,
     List<String>? interests,
     String? city,
+    bool? businessOnboarded,
   }) => UserModel(
     id: id ?? this.id,
     email: email ?? this.email,
@@ -90,6 +95,7 @@ class UserModel {
     bio: bio ?? this.bio,
     interests: interests ?? this.interests,
     city: city ?? this.city,
+    businessOnboarded: businessOnboarded ?? this.businessOnboarded,
   );
 }
 

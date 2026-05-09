@@ -10,6 +10,7 @@ import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/services/like_service.dart';
 import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
+import 'package:hobby_haven/services/location_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -20,19 +21,45 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _changingPhoto = false;
+  bool _editingPhone = false;
+  bool _savingPhone = false;
+  late TextEditingController _phoneController;
 
   @override
   void initState() {
     super.initState();
+    _phoneController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthService>();
       final bookings = context.read<BookingService>();
       if (auth.currentUser != null) {
+        _phoneController.text = auth.currentUser!.phone ?? '';
         bookings.loadUserBookings(auth.currentUser!.id);
         context.read<LikeService>().loadLikes(auth.currentUser!.id);
         context.read<RatingService>().loadUserRatings(auth.currentUser!.id);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePhone() async {
+    final auth = context.read<AuthService>();
+    setState(() => _savingPhone = true);
+    final ok = await auth.updateProfile(phone: _phoneController.text.trim());
+    if (mounted) {
+      setState(() {
+        _savingPhone = false;
+        _editingPhone = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Phone number updated' : 'Failed to update phone number')),
+      );
+    }
   }
 
   Future<void> _pickAndUploadAvatar() async {
@@ -73,6 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final likeService = context.watch<LikeService>();
     final themeService = context.watch<ThemeService>();
     final ratingService = context.watch<RatingService>();
+    final locationService = context.watch<LocationService>();
 
     final user = auth.currentUser;
     final userBookings = user == null ? 0 : bookings.getUserBookings(user.id).length;
@@ -86,7 +114,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               // Header
               Padding(
-                padding: AppSpacing.paddingLg,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
                 child: Row(
                   children: [
                     Text('Profile', style: theme.textTheme.headlineMedium?.copyWith(color: colorScheme.onSurface)),
@@ -95,12 +123,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               // Profile card
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Container(
                   padding: AppSpacing.paddingLg,
                   decoration: BoxDecoration(
                     color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
@@ -211,6 +239,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           )).toList(),
                         ),
                       ],
+                      // Location chip
+                      if (user?.city != null && user!.city!.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.location_on_rounded, size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5)),
+                            const SizedBox(width: 4),
+                            Text(
+                              user.city!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else if (locationService.savedLocation != null) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.my_location_rounded, size: 14, color: colorScheme.tertiary),
+                            const SizedBox(width: 4),
+                            Text(
+                              'GPS location saved',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.tertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       // Stats row
                       Row(
@@ -230,7 +290,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
               // Settings section
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -244,6 +304,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
+                    // Phone number edit
+                    if (_editingPhone)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number',
+                              hintText: '+201000000000',
+                              prefixIcon: const Icon(Icons.phone_rounded),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: _savingPhone
+                                    ? null
+                                    : () => setState(() {
+                                          _editingPhone = false;
+                                          _phoneController.text = user?.phone ?? '';
+                                        }),
+                                child: const Text('Cancel'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                onPressed: _savingPhone ? null : _savePhone,
+                                child: _savingPhone
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Text('Save'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      )
+                    else
+                      _SettingsRow(
+                        icon: Icons.phone_rounded,
+                        title: 'Phone Number',
+                        subtitle: (user?.phone != null && user!.phone!.isNotEmpty)
+                            ? user.phone!
+                            : 'Tap to add a phone number',
+                        onTap: () => setState(() => _editingPhone = true),
+                      ),
+                    const SizedBox(height: 12),
+                    // Booking History
+                    _SettingsRow(
+                      icon: Icons.history_rounded,
+                      title: 'Booking History',
+                      subtitle: 'Completed and cancelled activities',
+                      onTap: () => context.push(AppRoutes.profileHistory),
+                    ),
+                    const SizedBox(height: 12),
                     // Dark Mode Toggle
                     _DarkModeToggle(
                       isDarkMode: themeService.isDarkMode,
@@ -255,7 +375,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
               // Logout button
               Padding(
-                padding: AppSpacing.horizontalLg,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -313,6 +433,79 @@ class _StatItem extends StatelessWidget {
   }
 }
 
+class _SettingsRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _SettingsRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: colorScheme.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DarkModeToggle extends StatelessWidget {
   final bool isDarkMode;
   final VoidCallback onToggle;
@@ -342,7 +535,7 @@ class _DarkModeToggle extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDarkMode
-                        ? [const Color(0xFF1E1B7A), const Color(0xFF4A47B8)]
+                        ? [colorScheme.primary, colorScheme.primaryContainer]
                         : [AppColors.orange, AppColors.lime],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,

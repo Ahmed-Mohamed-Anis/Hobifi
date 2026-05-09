@@ -2,9 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/models/activity_model.dart';
+import 'package:hobby_haven/models/booking_model.dart';
 import 'package:hobby_haven/services/activity_service.dart';
+import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
 import 'package:hobby_haven/theme.dart';
+import 'package:hobby_haven/utils/booking_code.dart';
+import 'package:hobby_haven/utils/input_sanitizer.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -29,6 +33,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
   final _locationController = TextEditingController();
   final _priceController = TextEditingController();
   final _maxGuestsController = TextEditingController();
+  final _cancellationHoursController = TextEditingController();
 
   String _selectedCategory = 'Art';
   bool _isInstantBooking = true;
@@ -49,7 +54,8 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
   int _likesCount = 0;
   double _avgRating = 0.0;
   int _ratingsCount = 0;
-  List<Map<String, dynamic>> _attendees = [];
+  List<BookingModel> _attendeeBookings = [];
+  Map<String, Map<String, dynamic>> _attendeeUsers = {};
 
   @override
   void initState() {
@@ -100,6 +106,8 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     _startTime = TimeOfDay(hour: start.hour, minute: start.minute);
     _endTime = TimeOfDay(hour: end.hour, minute: end.minute);
 
+    _cancellationHoursController.text = (model.cancellationHours).toString();
+
     _primaryImageUrl = model.imageUrl;
     _gallery
       ..clear()
@@ -147,23 +155,28 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
       }
 
       // Fetch attendees (users who booked)
-      List<Map<String, dynamic>> attendees = [];
+      List<BookingModel> attendeeBookings = [];
+      Map<String, Map<String, dynamic>> attendeeUsers = {};
       try {
-        final bookingUsers = await SupabaseConfig.client
+        final bookingRows = await SupabaseConfig.client
             .from('bookings')
-            .select('user_id')
+            .select()
             .eq('activity_id', activityId)
-            .inFilter('status', ['confirmed', 'pending']);
-        final userIds = (bookingUsers as List)
-            .map((b) => b['user_id'] as String)
-            .toSet()
+            .inFilter('status', ['confirmed', 'pending', 'completed']);
+        attendeeBookings = (bookingRows as List)
+            .map((row) => BookingModel.fromJson(Map<String, dynamic>.from(row as Map)))
             .toList();
+        final userIds = attendeeBookings.map((b) => b.userId).toSet().toList();
         if (userIds.isNotEmpty) {
           final users = await SupabaseConfig.client
               .from('users')
               .select('id, name, avatar_url')
               .inFilter('id', userIds);
-          attendees = (users as List).cast<Map<String, dynamic>>();
+          final userList = (users as List).cast<Map<String, dynamic>>();
+          for (final u in userList) {
+            final uid = u['id'] as String?;
+            if (uid != null) attendeeUsers[uid] = u;
+          }
         }
       } catch (e) {
         debugPrint('Failed to fetch attendees: $e');
@@ -176,7 +189,8 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
           _likesCount = likesList.length;
           _avgRating = avgRating;
           _ratingsCount = ratingsList.length;
-          _attendees = attendees;
+          _attendeeBookings = attendeeBookings;
+          _attendeeUsers = attendeeUsers;
         });
       }
     } catch (e) {
@@ -191,6 +205,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     _locationController.dispose();
     _priceController.dispose();
     _maxGuestsController.dispose();
+    _cancellationHoursController.dispose();
     super.dispose();
   }
 
@@ -286,6 +301,80 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
     return null;
   }
 
+  Future<void> _confirmCancelBooking(BuildContext context, BookingModel booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel booking?'),
+        content: const Text('The guest will be notified and refunded. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancel booking', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final bookingService = context.read<BookingService>();
+    final result = await bookingService.cancelBookingBusiness(booking.id);
+    if (!context.mounted) return;
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Booking cancelled')),
+      );
+      if (mounted) {
+        setState(() {
+          _attendeeBookings.removeWhere((b) => b.id == booking.id);
+        });
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['error']?.toString() ?? 'Failed to cancel booking')),
+      );
+    }
+  }
+
+  Future<void> _confirmMarkAttended(BuildContext context, BookingModel booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as attended?'),
+        content: const Text("Confirm the guest has checked in. This can't be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Mark attended')),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final bookingService = context.read<BookingService>();
+    final result = await bookingService.markAttended(booking.id);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result['message']?.toString() ?? 'Done')),
+    );
+
+    if (result['success'] == true && mounted) {
+      setState(() {
+        final idx = _attendeeBookings.indexWhere((b) => b.id == booking.id);
+        if (idx >= 0) {
+          _attendeeBookings[idx] = _attendeeBookings[idx].copyWith(
+            status: BookingStatus.completed,
+            updatedAt: DateTime.now(),
+          );
+        }
+      });
+    }
+  }
+
   Future<void> _saveChanges() async {
     if (_activity == null) return;
 
@@ -308,9 +397,9 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
       final maxGuests = int.tryParse(_maxGuestsController.text.trim()) ?? 0;
 
       final updated = _activity!.copyWith(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        location: _locationController.text.trim(),
+        title: InputSanitizer.sanitize(_titleController.text.trim(), maxLength: 100),
+        description: InputSanitizer.sanitize(_descriptionController.text.trim(), maxLength: 2000),
+        location: InputSanitizer.sanitize(_locationController.text.trim(), maxLength: 200),
         category: _selectedCategory,
         price: price,
         maxGuests: maxGuests,
@@ -326,6 +415,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
         isPublic: _isPublic,
         imageUrl: _primaryImageUrl ?? _activity!.imageUrl,
         imageUrls: List<String>.from(_gallery),
+        cancellationHours: int.tryParse(_cancellationHoursController.text) ?? 24,
         updatedAt: DateTime.now(),
       );
 
@@ -471,7 +561,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                     const SizedBox(height: AppSpacing.lg),
 
                     // Who's Coming
-                    if (_attendees.isNotEmpty) ...[
+                    if (_attendeeBookings.isNotEmpty) ...[
                       Row(
                         children: [
                           Text("Who's Coming", style: theme.textTheme.titleLarge),
@@ -483,7 +573,7 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              '${_attendees.length}/${_activity?.maxGuests ?? '?'}',
+                              '${_attendeeBookings.length}/${_activity?.maxGuests ?? '?'}',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.primary,
                                 fontWeight: FontWeight.w600,
@@ -493,46 +583,89 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      SizedBox(
-                        height: 72,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _attendees.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, index) {
-                            final user = _attendees[index];
-                            final name = user['name'] as String? ?? 'Guest';
-                            final avatar = user['avatar_url'] as String?;
-                            return Column(
+                      ..._attendeeBookings.map((booking) {
+                        final colorScheme = theme.colorScheme;
+                        final isAttended = booking.status == BookingStatus.completed;
+                        final user = _attendeeUsers[booking.userId];
+                        final name = (user?['name'] as String?) ?? 'Guest';
+                        final avatar = user?['avatar_url'] as String?;
+                        return Opacity(
+                          opacity: isAttended ? 0.5 : 1.0,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
                               children: [
                                 CircleAvatar(
-                                  radius: 22,
-                                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                  radius: 20,
+                                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
                                   backgroundImage: (avatar != null && avatar.startsWith('http'))
                                       ? NetworkImage(avatar)
                                       : null,
-                                  child: avatar == null
-                                      ? Icon(Icons.person_rounded, size: 20, color: theme.colorScheme.primary)
+                                  child: (avatar == null || !avatar.startsWith('http'))
+                                      ? Icon(Icons.person_rounded, size: 20, color: colorScheme.primary)
                                       : null,
                                 ),
-                                const SizedBox(height: 4),
-                                SizedBox(
-                                  width: 52,
-                                  child: Text(
-                                    name.split(' ').first,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                    ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        bookingCodeFor(booking.id),
+                                        style: theme.textTheme.labelMedium?.copyWith(
+                                          color: colorScheme.primary,
+                                          letterSpacing: 2,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                                const SizedBox(width: 8),
+                                isAttended
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.tertiary.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          'Checked in',
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: colorScheme.tertiary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (booking.status == BookingStatus.confirmed)
+                                            IconButton(
+                                              icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                                              tooltip: 'Cancel booking',
+                                              onPressed: () => _confirmCancelBooking(context, booking),
+                                            ),
+                                          TextButton(
+                                            onPressed: () => _confirmMarkAttended(context, booking),
+                                            child: const Text('Mark attended'),
+                                          ),
+                                        ],
+                                      ),
                               ],
-                            );
-                          },
-                        ),
-                      ),
+                            ),
+                          ),
+                        );
+                      }),
                       const SizedBox(height: AppSpacing.lg),
                     ],
 
@@ -633,6 +766,17 @@ class _BusinessActivityScreenState extends State<BusinessActivityScreen> {
                         ),
                       ),
                     ]),
+
+                    const SizedBox(height: AppSpacing.md),
+
+                    TextField(
+                      controller: _cancellationHoursController,
+                      decoration: const InputDecoration(
+                        labelText: 'Cancellation window (hours)',
+                        prefixIcon: Icon(Icons.cancel_schedule_send_rounded),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
 
                     const SizedBox(height: AppSpacing.lg),
 

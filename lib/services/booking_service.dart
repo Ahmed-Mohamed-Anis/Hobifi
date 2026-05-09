@@ -60,10 +60,11 @@ class BookingService extends ChangeNotifier {
         filters: {'id': bookingId},
       );
       if (data == null) return null;
-      return BookingStatus.values.firstWhere(
-        (e) => e.name == data['status'],
-        orElse: () => BookingStatus.pending,
-      );
+      try {
+        return BookingStatus.values.firstWhere((e) => e.name == data['status']);
+      } on StateError {
+        return null;
+      }
     } catch (e) {
       debugPrint('Failed to fetch booking status: $e');
       return null;
@@ -91,7 +92,6 @@ class BookingService extends ChangeNotifier {
       await _autoCompleteExpiredBookings();
     } catch (e) {
       debugPrint('Failed to load bookings: $e');
-      _bookings = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -138,6 +138,11 @@ class BookingService extends ChangeNotifier {
     }
   }
 
+  /// Force-refresh all business bookings. Called by the booking management screen.
+  Future<void> loadBusinessBookingsAll(String businessId) async {
+    await loadBusinessBookings(businessId);
+  }
+
   Future<void> loadBusinessBookings(String businessId) async {
     _isLoading = true;
     notifyListeners();
@@ -169,7 +174,6 @@ class BookingService extends ChangeNotifier {
           .toList();
     } catch (e) {
       debugPrint('Failed to load business bookings: $e');
-      _businessBookings = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -189,21 +193,10 @@ class BookingService extends ChangeNotifier {
           b.activityId == activityId &&
           (b.status == BookingStatus.confirmed || b.status == BookingStatus.completed));
 
-  Future<void> createBooking(BookingModel booking) async {
-    try {
-      final data = Map<String, dynamic>.from(booking.toJson());
-      // Keep the ID if provided, let Supabase generate timestamps
-      data.remove('created_at');
-      data.remove('updated_at');
-      await SupabaseService.insert('bookings', data);
-      await loadUserBookings(booking.userId, force: true);
-    } catch (e) {
-      debugPrint('Failed to create booking: $e');
-      rethrow;
-    }
-  }
-
   Future<void> updateBookingStatus(String bookingId, BookingStatus status) async {
+    if (status == BookingStatus.confirmed) {
+      throw Exception('Booking confirmation is handled by the payment system.');
+    }
     try {
       await SupabaseService.update(
         'bookings',
@@ -223,12 +216,16 @@ class BookingService extends ChangeNotifier {
   /// Cancel a booking via the server-side edge function.
   /// Enforces 24-hour cancellation policy and handles refunds.
   Future<Map<String, dynamic>> cancelBookingServerSide(String bookingId) async {
+    final token = SupabaseConfig.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) {
+      return {'success': false, 'error': 'Session expired. Please sign in again.'};
+    }
     try {
       final response = await http.post(
         Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/process-cancellation'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${SupabaseConfig.auth.currentSession?.accessToken ?? SupabaseConfig.anonKey}',
+          'Authorization': 'Bearer $token',
           'apikey': SupabaseConfig.anonKey,
         },
         body: jsonEncode({'booking_id': bookingId}),
@@ -249,6 +246,74 @@ class BookingService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Failed to cancel booking: $e');
       return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Business cancels a confirmed booking from their side.
+  Future<Map<String, dynamic>> cancelBookingBusiness(String bookingId) async {
+    final token = SupabaseConfig.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) {
+      return {'success': false, 'error': 'Session expired. Please sign in again.'};
+    }
+    try {
+      final response = await http.post(
+        Uri.parse('${SupabaseConfig.supabaseUrl}/functions/v1/process-cancellation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+          'apikey': SupabaseConfig.anonKey,
+        },
+        body: jsonEncode({'booking_id': bookingId, 'cancelled_by': 'business'}),
+      );
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final businessId = SupabaseConfig.auth.currentUser?.id;
+        if (businessId != null) await loadBusinessBookings(businessId);
+        return {'success': true};
+      }
+      return {'success': false, 'error': data['error'] ?? 'Cancellation failed'};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Mark a booking as attended (status -> completed). Provider-side action.
+  /// Used when a business checks in a customer at the activity.
+  Future<Map<String, dynamic>> markAttended(String bookingId) async {
+    try {
+      await SupabaseService.update(
+        'bookings',
+        {
+          'status': BookingStatus.completed.name,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        filters: {'id': bookingId},
+      );
+
+      // Update local business bookings cache if the booking is present.
+      final idx = _businessBookings.indexWhere((b) => b.id == bookingId);
+      if (idx >= 0) {
+        final b = _businessBookings[idx];
+        _businessBookings[idx] = BookingModel(
+          id: b.id,
+          userId: b.userId,
+          activityId: b.activityId,
+          activityTitle: b.activityTitle,
+          activityImage: b.activityImage,
+          location: b.location,
+          price: b.price,
+          dateTime: b.dateTime,
+          status: BookingStatus.completed,
+          createdAt: b.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      }
+      notifyListeners();
+
+      return {'success': true, 'message': 'Booking marked as attended'};
+    } catch (e) {
+      debugPrint('Failed to mark booking as attended: $e');
+      return {'success': false, 'message': 'Failed to mark attended: $e'};
     }
   }
 

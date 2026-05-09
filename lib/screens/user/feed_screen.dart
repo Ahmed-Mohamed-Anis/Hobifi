@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hobby_haven/services/activity_service.dart';
@@ -11,11 +11,17 @@ import 'package:hobby_haven/services/like_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:hobby_haven/services/location_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:hobby_haven/utils/distance_util.dart';
 import 'package:hobby_haven/widgets/hobifi_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
 import 'package:hobby_haven/widgets/hobifi_section_header.dart';
 import 'package:hobby_haven/widgets/hobifi_empty_state.dart';
+import 'package:hobby_haven/widgets/hobifi_search_bar.dart';
+import 'package:hobby_haven/utils/feed_filters.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -32,11 +38,20 @@ class _FeedScreenState extends State<FeedScreen> {
   Timer? _debounce;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  late final FocusNode _searchFocusNode;
+  List<String> _searchHistory = [];
+  bool _searchFocused = false;
+  SharedPreferences? _prefs;
+
+  static const _historyKey = 'search_history';
+  static const _suggestions = ['Pottery', 'Yoga', 'Cooking class', 'Photography'];
 
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = FocusNode();
     _scrollController.addListener(_onScroll);
+    _loadSearchHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthService>();
       if (auth.currentUser != null) {
@@ -176,6 +191,28 @@ class _FeedScreenState extends State<FeedScreen> {
     });
   }
 
+  Future<void> _loadSearchHistory() async {
+    _prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _searchHistory = _prefs!.getStringList(_historyKey) ?? []);
+  }
+
+  Future<void> _saveSearchTerm(String term) async {
+    final trimmed = term.trim();
+    if (trimmed.isEmpty) return;
+    final updated = [trimmed, ..._searchHistory.where((t) => t != trimmed)].take(5).toList();
+    setState(() => _searchHistory = updated);
+    if (_prefs == null) await _loadSearchHistory();
+    await _prefs!.setStringList(_historyKey, updated);
+  }
+
+  Future<void> _removeSearchTerm(String term) async {
+    final updated = _searchHistory.where((t) => t != term).toList();
+    setState(() => _searchHistory = updated);
+    if (_prefs == null) await _loadSearchHistory();
+    await _prefs!.setStringList(_historyKey, updated);
+  }
+
   void _selectCategory(String category) {
     setState(() => _selectedCategory = category);
     if (_searchQuery.trim().isNotEmpty) {
@@ -198,7 +235,16 @@ class _FeedScreenState extends State<FeedScreen> {
     _debounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  String? _distanceLabel(ActivityModel activity, LatLng? userLocation) {
+    if (userLocation == null || activity.latitude == null) return null;
+    return DistanceUtil.formatDistance(
+      userLocation,
+      LatLng(activity.latitude!, activity.longitude!),
+    );
   }
 
   @override
@@ -238,16 +284,25 @@ class _FeedScreenState extends State<FeedScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                  child: _MinimalSearchBar(
+                  child: HobifiSearchBar(
                     controller: _searchController,
+                    focusNode: _searchFocusNode,
                     onChanged: _onSearchChanged,
                     onClear: () {
                       _searchController.clear();
                       _onSearchChanged('');
                     },
+                    onFocusChange: (focused) => setState(() => _searchFocused = focused),
+                    onSubmitted: (term) {
+                      if (term.trim().isNotEmpty) _saveSearchTerm(term.trim());
+                    },
                   ),
                 ),
               ),
+
+              // 2b. Search history / suggestion chips
+              if (_searchFocused && _searchQuery.isEmpty)
+                SliverToBoxAdapter(child: _buildSearchChips()),
 
               // 3. Category chips using HobifiChip
               SliverToBoxAdapter(
@@ -308,10 +363,13 @@ class _FeedScreenState extends State<FeedScreen> {
               if (_searchQuery.isEmpty) ...[
                 _buildDiscoveryFeed(activities, theme),
               ] else if (_isSearching) ...[
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(48),
-                    child: Center(child: CircularProgressIndicator()),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, __) => Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      child: HobifiShimmer.card(),
+                    ),
+                    childCount: 3,
                   ),
                 ),
               ] else ...[
@@ -335,6 +393,28 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  Widget _buildSearchChips() {
+    final theme = Theme.of(context);
+    final bool isHistory = _searchHistory.isNotEmpty;
+    final chips = isHistory ? _searchHistory : _suggestions;
+    final label = isHistory ? 'Recent' : 'Popular';
+
+    return _SearchChipsRow(
+      chips: chips,
+      label: label,
+      isHistory: isHistory,
+      onChipTap: (term) {
+        _searchController.text = term;
+        _onSearchChanged(term);
+        _saveSearchTerm(term);
+        _searchFocusNode.unfocus();
+      },
+      onChipDelete: isHistory ? _removeSearchTerm : null,
+      colorScheme: theme.colorScheme,
+      textTheme: theme.textTheme,
+    );
+  }
+
   Widget _buildDiscoveryFeed(List<ActivityModel> activities, ThemeData theme) {
     if (activities.isEmpty) {
       return const SliverToBoxAdapter(
@@ -346,21 +426,31 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     }
 
-    final trendingActivities = activities.take(3).toList();
-    final popularActivities = activities.skip(1).take(4).toList();
-    final weekendActivities = activities.where((a) => a.spotsLeft > 5).take(3).toList();
-
     final auth = context.watch<AuthService>();
     final likeService = context.watch<LikeService>();
+    final userLocation = context.watch<LocationService>().savedLocation;
+
+    final trendingActivities = trendingFilterSort(activities, 'All', userLocation);
+    final popularActivities = nearbyFilterSort(activities, 'All', userLocation);
+    final weekendActivities = weekendFilterSort(activities, 'All', userLocation);
 
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Trending section
-          const HobifiSectionHeader(
+          HobifiSectionHeader(
             title: 'Trending Experiences',
-            subtitle: 'Most popular right now',
+            subtitle: 'Highest rated right now',
+            actionLabel: 'Explore more',
+            onSeeAll: () => context.push(
+              AppRoutes.sectionExplore,
+              extra: {
+                'title': 'Trending Experiences',
+                'subtitle': 'Highest rated right now',
+                'filterSort': trendingFilterSort,
+              },
+            ),
           ),
           SizedBox(
             height: 340,
@@ -382,6 +472,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       final userId = auth.currentUser?.id;
                       if (userId != null) likeService.toggleLike(userId, activity.id);
                     },
+                    distanceLabel: _distanceLabel(activity, userLocation),
                   ),
                 );
               },
@@ -390,34 +481,64 @@ class _FeedScreenState extends State<FeedScreen> {
           const SizedBox(height: 32),
 
           // Popular section
-          const HobifiSectionHeader(
+          HobifiSectionHeader(
             title: 'Popular Near You',
-            subtitle: "Discover what's happening around you",
+            subtitle: 'Closest activities to you',
+            actionLabel: 'Explore more',
+            onSeeAll: userLocation != null ? () => context.push(
+              AppRoutes.sectionExplore,
+              extra: {
+                'title': 'Popular Near You',
+                'subtitle': 'Closest activities to you',
+                'filterSort': nearbyFilterSort,
+              },
+            ) : null,
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: popularActivities.map((activity) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: HobifiCard(
-                  activity: activity,
-                  isLiked: likeService.isLiked(activity.id),
-                  onTap: () => context.push('${AppRoutes.activity}/${activity.id}'),
-                  onLikeTap: () {
-                    final userId = auth.currentUser?.id;
-                    if (userId != null) likeService.toggleLike(userId, activity.id);
-                  },
-                ),
-              )).toList(),
+          if (userLocation == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: HobifiEmptyState(
+                icon: Icons.location_off_rounded,
+                title: 'Enable location to see activities near you',
+                actionLabel: 'Enable Location',
+                onAction: () { Geolocator.openAppSettings(); },
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: popularActivities.map((activity) => Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: HobifiCard(
+                    activity: activity,
+                    isLiked: likeService.isLiked(activity.id),
+                    onTap: () => context.push('${AppRoutes.activity}/${activity.id}'),
+                    onLikeTap: () {
+                      final userId = auth.currentUser?.id;
+                      if (userId != null) likeService.toggleLike(userId, activity.id);
+                    },
+                    distanceLabel: _distanceLabel(activity, userLocation),
+                  ),
+                )).toList(),
+              ),
             ),
-          ),
 
           // Weekend section (if activities available)
           if (weekendActivities.isNotEmpty) ...[
             const SizedBox(height: 24),
-            const HobifiSectionHeader(
-              title: 'Weekend Adventures',
-              subtitle: 'Perfect for your next getaway',
+            HobifiSectionHeader(
+              title: 'Friday & Saturday',
+              subtitle: 'Activities this weekend',
+              actionLabel: 'Explore more',
+              onSeeAll: () => context.push(
+                AppRoutes.sectionExplore,
+                extra: {
+                  'title': 'Friday & Saturday',
+                  'subtitle': 'Activities this weekend',
+                  'filterSort': weekendFilterSort,
+                },
+              ),
             ),
             SizedBox(
               height: 340,
@@ -439,6 +560,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         final userId = auth.currentUser?.id;
                         if (userId != null) likeService.toggleLike(userId, activity.id);
                       },
+                      distanceLabel: _distanceLabel(activity, userLocation),
                     ),
                   );
                 },
@@ -453,6 +575,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildSearchResults(List<ActivityModel> activities, ThemeData theme) {
     final auth = context.watch<AuthService>();
     final likeService = context.watch<LikeService>();
+    final userLocation = context.watch<LocationService>().savedLocation;
 
     if (activities.isEmpty) {
       return SliverToBoxAdapter(
@@ -485,11 +608,78 @@ class _FeedScreenState extends State<FeedScreen> {
                   final userId = auth.currentUser?.id;
                   if (userId != null) likeService.toggleLike(userId, activity.id);
                 },
+                distanceLabel: _distanceLabel(activity, userLocation),
               ),
             );
           },
           childCount: activities.length,
         ),
+      ),
+    );
+  }
+}
+
+// ── Search Chips Row ──────────────────────────────────────────────────────────
+
+class _SearchChipsRow extends StatelessWidget {
+  final List<String> chips;
+  final String label;
+  final bool isHistory;
+  final ValueChanged<String> onChipTap;
+  final ValueChanged<String>? onChipDelete;
+  final ColorScheme colorScheme;
+  final TextTheme textTheme;
+
+  const _SearchChipsRow({
+    required this.chips,
+    required this.label,
+    required this.isHistory,
+    required this.onChipTap,
+    required this.onChipDelete,
+    required this.colorScheme,
+    required this.textTheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(
+              children: chips.map((term) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: InputChip(
+                  label: Text(term),
+                  onPressed: () => onChipTap(term),
+                  onDeleted: isHistory ? () => onChipDelete?.call(term) : null,
+                  deleteIcon: isHistory
+                      ? Icon(Icons.close_rounded,
+                          size: 14, color: colorScheme.onSurface.withValues(alpha: 0.5))
+                      : null,
+                  backgroundColor: colorScheme.surface,
+                  side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+                  labelStyle: textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -521,12 +711,17 @@ class _MinimalHeader extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Image.asset(
-                'assets/images/hobifi_logo.png',
-                height: 35,
-                fit: BoxFit.contain,
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  heightFactor: 0.72,
+                  child: Image.asset(
+                    'assets/images/hobifi_logo.png',
+                    height: 90,
+                    fit: BoxFit.fitHeight,
+                  ),
+                ),
               ),
-              const SizedBox(height: 4),
               Text(
                 mainTab == 'Explore' ? 'Discover' : mainTab,
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -543,7 +738,7 @@ class _MinimalHeader extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: colorScheme.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
+                shape: BoxShape.circle,
                 image: avatarUrl != null && avatarUrl!.startsWith('http')
                     ? DecorationImage(
                         image: NetworkImage(avatarUrl!),
@@ -562,98 +757,3 @@ class _MinimalHeader extends StatelessWidget {
   }
 }
 
-// ── Minimal Search Bar ────────────────────────────────────────────────────────
-
-class _MinimalSearchBar extends StatefulWidget {
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  const _MinimalSearchBar({
-    required this.controller,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  @override
-  State<_MinimalSearchBar> createState() => _MinimalSearchBarState();
-}
-
-class _MinimalSearchBarState extends State<_MinimalSearchBar> {
-  final FocusNode _focusNode = FocusNode();
-  bool _isFocused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode.addListener(() {
-      setState(() => _isFocused = _focusNode.hasFocus);
-    });
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      height: 52,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isFocused ? colorScheme.primary : theme.dividerColor,
-          width: _isFocused ? 1.5 : 1,
-        ),
-        boxShadow: _isFocused
-            ? [BoxShadow(color: colorScheme.primary.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))]
-            : null,
-      ),
-      child: TextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        onChanged: widget.onChanged,
-        style: TextStyle(
-          color: colorScheme.onSurface,
-          fontSize: 15,
-        ),
-        decoration: InputDecoration(
-          hintText: 'Search experiences...',
-          hintStyle: TextStyle(
-            color: theme.hintColor,
-            fontSize: 15,
-          ),
-          prefixIcon: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.only(left: 16, right: 12),
-            child: Icon(
-              Icons.search_rounded,
-              color: _isFocused ? colorScheme.primary : theme.hintColor,
-              size: 22,
-            ),
-          ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 50),
-          suffixIcon: widget.controller.text.isNotEmpty
-              ? IconButton(
-                  icon: Icon(Icons.close_rounded, color: theme.hintColor, size: 20),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    widget.onClear();
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
-      ),
-    );
-  }
-}

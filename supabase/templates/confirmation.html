@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verify your Hobifi account</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F5EED6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F5EED6;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;">
+
+          <!-- Logo / brand -->
+          <tr>
+            <td align="center" style="padding-bottom:32px;">
+              <span style="font-size:28px;font-weight:900;color:#1E1B7A;letter-spacing:-0.5px;">hobifi</span>
+            </td>
+          </tr>
+
+          <!-- Card -->
+          <tr>
+            <td style="background-color:#ffffff;border-radius:20px;padding:40px 36px;box-shadow:0 2px 12px rgba(30,27,122,0.08);">
+
+              <!-- Icon -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom:24px;">
+                    <div style="width:64px;height:64px;background-color:#FFF3E8;border-radius:50%;display:inline-block;line-height:64px;text-align:center;font-size:30px;">
+                      ✉️
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Heading -->
+                <tr>
+                  <td align="center" style="padding-bottom:8px;">
+                    <h1 style="margin:0;font-size:22px;font-weight:800;color:#1E1B7A;">Verify your email</h1>
+                  </td>
+                </tr>
+
+                <!-- Subtext -->
+                <tr>
+                  <td align="center" style="padding-bottom:32px;">
+                    <p style="margin:0;font-size:15px;color:#6B6B80;line-height:1.5;">
+                      Enter this code in the Hobifi app to confirm your account.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- OTP code box -->
+                <tr>
+                  <td align="center" style="padding-bottom:32px;">
+                    <div style="background-color:#F5EED6;border-radius:14px;padding:20px 32px;display:inline-block;">
+                      <span style="font-size:40px;font-weight:900;letter-spacing:14px;color:#1E1B7A;font-family:'Courier New',monospace;">{{ .Token }}</span>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Expiry note -->
+                <tr>
+                  <td align="center" style="padding-bottom:32px;">
+                    <p style="margin:0;font-size:13px;color:#9B9BAA;">
+                      This code expires in <strong>1 hour</strong>. Do not share it with anyone.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- Divider -->
+                <tr>
+                  <td style="border-top:1px solid #EBEBF0;padding-bottom:24px;"></td>
+                </tr>
+
+                <!-- Fallback link -->
+                <tr>
+                  <td align="center" style="padding-bottom:8px;">
+                    <p style="margin:0;font-size:13px;color:#9B9BAA;">
+                      Or confirm via link:
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;background-color:#E88B3C;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 28px;border-radius:12px;">
+                      Confirm Email
+                    </a>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:24px;">
+              <p style="margin:0;font-size:12px;color:#9B9BAA;">
+                If you didn't create a Hobifi account, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

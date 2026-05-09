@@ -14,16 +14,22 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   bool _isUser = true;
-  bool _isSignUp = false;
+  bool _isSignUp = true;
+  bool _obscurePassword = true;
+  bool _isVerifyingEmail = false;
+  String _pendingEmail = '';
+  bool _resendCooldown = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
+  final _otpController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -34,6 +40,13 @@ class _AuthScreenState extends State<AuthScreen> {
     // during signIn (GoRouter refreshListenable fires on notifyListeners),
     // which can unmount this State and make context invalid.
     final messenger = ScaffoldMessenger.of(context);
+
+    if (_isSignUp && _passwordController.text.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 8 characters.')),
+      );
+      return;
+    }
 
     Map<String, dynamic> result;
     if (_isSignUp) {
@@ -50,21 +63,11 @@ class _AuthScreenState extends State<AuthScreen> {
     if (result['success'] == true) {
       if (!mounted) return;
       if (result['requiresConfirmation'] == true) {
-        // Auto sign-in after sign-up so the user doesn't have to re-enter credentials
-        final signInResult = await authService.signIn(
-          _emailController.text,
-          _passwordController.text,
-          role,
-        );
-        if (!mounted) return;
-        if (signInResult['success'] == true) {
-          context.go('/');
-        } else if (signInResult['message']?.toString().contains('not confirmed') == true) {
-          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
-        } else {
-          // Sign-in failed for another reason — show the confirmation dialog as fallback
-          _showEmailConfirmationDialog(result['message'] ?? 'Please check your email for a confirmation link.');
-        }
+        setState(() {
+          _isVerifyingEmail = true;
+          _pendingEmail = _emailController.text.trim();
+          _otpController.clear();
+        });
       } else {
         // Let the router redirect handle navigation based on role + onboarding state
         context.go('/');
@@ -80,6 +83,49 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleVerifyEmail() async {
+    final otp = _otpController.text.trim();
+    if (otp.length < 6) {
+      _showErrorSnackBar('Please enter the 6-digit code from your email.');
+      return;
+    }
+    final authService = context.read<AuthService>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await authService.verifyEmailOTP(_pendingEmail, otp);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      context.go('/');
+    } else {
+      messenger.showSnackBar(SnackBar(
+        content: Text(result['message'] ?? 'Verification failed.'),
+        backgroundColor: AppColors.lightError,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
+  }
+
+  Future<void> _handleResendOTP() async {
+    if (_resendCooldown) return;
+    final authService = context.read<AuthService>();
+    final result = await authService.resendSignupOTP(_pendingEmail);
+    if (!mounted) return;
+    setState(() => _resendCooldown = true);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(result['success'] == true
+          ? 'Code resent to $_pendingEmail'
+          : result['message'] ?? 'Failed to resend.'),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+    // 30-second cooldown before allowing another resend
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) setState(() => _resendCooldown = false);
+    });
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -138,52 +184,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  void _showEmailConfirmationDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        icon: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.orange.withValues(alpha: 0.2), AppColors.lime.withValues(alpha: 0.2)],
-            ),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.mark_email_read_rounded, color: AppColors.orange, size: 32),
-        ),
-        title: const Text('Verify Your Email', textAlign: TextAlign.center),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 16),
-            Text('After confirming, you can sign in with your credentials.', 
-              textAlign: TextAlign.center, 
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.lightSecondaryText),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              setState(() {
-                _isSignUp = false;
-                _emailController.clear();
-                _passwordController.clear();
-                _nameController.clear();
-              });
-            },
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showForgotPasswordDialog() {
     showDialog(
       context: context,
@@ -199,31 +199,67 @@ class _AuthScreenState extends State<AuthScreen> {
     final authService = context.watch<AuthService>();
     final accentColor = _isUser ? AppColors.orange : AppColors.lime;
 
+    if (_isVerifyingEmail) {
+      return _buildEmailVerificationScaffold(theme, colorScheme, authService, accentColor);
+    }
+
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               // Logo block
               _buildLogoBlock(theme, colorScheme),
 
               const SizedBox(height: 12),
 
-              // Role toggle
-              _buildRoleToggle(colorScheme),
+              // Role toggle — sign-in only
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: !_isSignUp
+                    ? Column(
+                        children: [
+                          _buildRoleToggle(colorScheme),
+                          const SizedBox(height: 12),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
+              ),
 
-              const SizedBox(height: 12),
+              // Form card
+              _buildFormCard(theme, colorScheme, authService, accentColor),
 
-              // Form card (only this part scrolls on very small screens)
-              Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: _buildFormCard(theme, colorScheme, authService, accentColor),
-                ),
+              // Host / Explorer switch link — sign-up only
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _isSignUp
+                    ? Padding(
+                        key: const ValueKey('role-link'),
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Center(
+                          child: TextButton(
+                            onPressed: () => setState(() => _isUser = !_isUser),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            child: Text(
+                              _isUser ? 'Sign up as a Host →' : 'Sign up as an Explorer →',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppColors.lime,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('no-role-link')),
               ),
 
               const SizedBox(height: 12),
@@ -238,23 +274,37 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 8),
 
-              // Toggle sign up/in
-              Center(
-                child: TextButton(
-                  onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    _isSignUp
-                        ? 'Already have an account? Sign In'
-                        : "Don't have an account? Sign Up",
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withValues(alpha: 0.6),
+              // Mode switch link
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isSignUp ? 'Already have an account? ' : "Don't have an account? ",
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
                     ),
-                  ),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _isSignUp = !_isSignUp;
+                        _obscurePassword = true;
+                      }),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        _isSignUp ? 'Sign in' : 'Sign up',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: accentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -274,23 +324,221 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
-  
+
+  Widget _buildEmailVerificationScaffold(
+    ThemeData theme,
+    ColorScheme colorScheme,
+    AuthService authService,
+    Color accentColor,
+  ) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+
+              // Back button
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back_rounded, color: colorScheme.onSurface),
+                  onPressed: () => setState(() {
+                    _isVerifyingEmail = false;
+                    _otpController.clear();
+                    _resendCooldown = false;
+                  }),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Icon
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.mark_email_unread_rounded, color: accentColor, size: 40),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Title
+              Text(
+                'Verify your email',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: colorScheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'We sent a 6-digit code to\n$_pendingEmail',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+
+              const SizedBox(height: 32),
+
+              // OTP input
+              TextField(
+                controller: _otpController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                textAlign: TextAlign.center,
+                autofocus: true,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 10,
+                  color: colorScheme.onSurface,
+                ),
+                decoration: InputDecoration(
+                  hintText: '······',
+                  hintStyle: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 10,
+                    color: colorScheme.onSurface.withValues(alpha: 0.2),
+                  ),
+                  counterText: '',
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerLowest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: accentColor, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
+                ),
+                onChanged: (val) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
+                  if (val.length == 6) _handleVerifyEmail();
+                },
+              ),
+
+              const SizedBox(height: 24),
+
+              // Verify button
+              if (authService.isLoading)
+                Center(
+                  child: SizedBox(
+                    height: 52,
+                    child: Center(
+                      child: CircularProgressIndicator(color: accentColor, strokeWidth: 3),
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: _handleVerifyEmail,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text(
+                      'Verify Email',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              // Resend
+              Center(
+                child: TextButton(
+                  onPressed: _resendCooldown ? null : _handleResendOTP,
+                  child: Text(
+                    _resendCooldown ? 'Resend in 30s' : "Didn't get the code? Resend",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _resendCooldown
+                          ? colorScheme.onSurface.withValues(alpha: 0.35)
+                          : accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLogoBlock(ThemeData theme, ColorScheme colorScheme) {
+    final String headline;
+    final String subtext;
+    if (_isSignUp) {
+      headline = _isUser ? 'Discover local hobbies' : 'Host your passion';
+      subtext = _isUser ? 'Book and meet real people' : 'Get paid in EGP';
+    } else {
+      headline = 'Welcome back';
+      subtext = 'Sign in to continue';
+    }
+
     return Column(
       children: [
-        Image.asset(
-          'assets/images/hobifi_logo.png',
-          height: 150,
-          fit: BoxFit.contain,
+        ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: 0.72,
+            child: Image.asset(
+              'assets/images/hobifi_logo.png',
+              height: 130,
+              fit: BoxFit.fitHeight,
+            ),
+          ),
         ),
-        const SizedBox(height: 12),
-        Text(
-          _isSignUp ? 'Begin Your Journey' : 'Discover What Moves You',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurface.withValues(alpha: 0.5),
+        const SizedBox(height: 4),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            headline,
+            key: ValueKey(headline),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colorScheme.onSurface,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 4),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: Text(
+            subtext,
+            key: ValueKey(subtext),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.55),
+            ),
+            textAlign: TextAlign.center,
           ),
         ),
       ],
@@ -361,7 +609,7 @@ class _AuthScreenState extends State<AuthScreen> {
     Color accentColor,
   ) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
@@ -405,7 +653,8 @@ class _AuthScreenState extends State<AuthScreen> {
             label: 'Password',
             hint: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
             icon: Icons.lock_outline_rounded,
-            obscure: true,
+            obscure: _obscurePassword,
+            onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
           ),
 
           if (!_isSignUp) ...[
@@ -555,6 +804,7 @@ class _AuthScreenState extends State<AuthScreen> {
     required IconData icon,
     bool obscure = false,
     TextInputType? keyboardType,
+    VoidCallback? onToggleObscure,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final accentColor = _isUser ? AppColors.orange : AppColors.lime;
@@ -588,8 +838,15 @@ class _AuthScreenState extends State<AuthScreen> {
               fontSize: 15,
             ),
             prefixIcon: Icon(icon, color: colorScheme.onSurface.withValues(alpha: 0.5), size: 20),
-            suffixIcon: obscure
-                ? Icon(Icons.visibility_off_rounded, color: colorScheme.onSurface.withValues(alpha: 0.4), size: 20)
+            suffixIcon: onToggleObscure != null
+                ? IconButton(
+                    icon: Icon(
+                      obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                      color: colorScheme.onSurface.withValues(alpha: 0.4),
+                      size: 20,
+                    ),
+                    onPressed: onToggleObscure,
+                  )
                 : null,
             filled: true,
             fillColor: colorScheme.surfaceContainerLowest,
@@ -709,8 +966,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
     final newPassword = _newPasswordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    if (newPassword.isEmpty || newPassword.length < 6) {
-      setState(() => _errorMessage = 'Password must be at least 6 characters');
+    if (newPassword.isEmpty || newPassword.length < 8) {
+      setState(() => _errorMessage = 'Password must be at least 8 characters');
       return;
     }
 

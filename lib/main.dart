@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/screens/splash_screen.dart';
@@ -13,6 +14,10 @@ import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/services/payment_service.dart';
 import 'package:hobby_haven/services/wallet_service.dart';
 import 'package:hobby_haven/services/theme_service.dart';
+import 'package:hobby_haven/services/location_service.dart';
+import 'package:hobby_haven/services/connectivity_service.dart';
+import 'package:hobby_haven/services/push_notification_service.dart';
+import 'package:hobby_haven/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +37,13 @@ void main() async {
   
   // Initialize Supabase
   await SupabaseConfig.initialize();
-  
+
+  // Initialize Firebase and push notifications
+  try {
+    await Firebase.initializeApp();
+    await PushNotificationService.initialize();
+  } catch (_) {}
+
   runApp(const MyApp());
 }
 
@@ -69,9 +80,11 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ConnectivityService()),
         ChangeNotifierProvider(create: (_) => ThemeService()..initialize()),
         ChangeNotifierProvider(create: (_) => AuthService()..initialize()),
         ChangeNotifierProvider(create: (_) => ActivityService()..initialize()),
+        ChangeNotifierProvider(create: (_) => LocationService()..loadSavedLocation()),
         ChangeNotifierProxyProvider<AuthService, BookingService>(
           create: (_) => BookingService(),
           update: (context, auth, bookingService) {
@@ -106,16 +119,8 @@ class _MyAppState extends State<MyApp> {
             return svc;
           },
         ),
-        ChangeNotifierProxyProvider<AuthService, PaymentService>(
+        ChangeNotifierProvider<PaymentService>(
           create: (_) => PaymentService(),
-          update: (context, auth, paymentService) {
-            final svc = paymentService ?? PaymentService();
-            final userId = auth.currentUser?.id;
-            if (userId != null) {
-              svc.loadUserPayments(userId);
-            }
-            return svc;
-          },
         ),
         ChangeNotifierProxyProvider<AuthService, WalletService>(
           create: (_) => WalletService(),
@@ -125,6 +130,17 @@ class _MyAppState extends State<MyApp> {
             // Only load wallet for business users
             if (user != null && user.role.name == 'business') {
               svc.loadWallet(user.id);
+            }
+            return svc;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthService, NotificationService>(
+          create: (_) => NotificationService(),
+          update: (context, auth, notifService) {
+            final svc = notifService ?? NotificationService();
+            final user = auth.currentUser;
+            if (user != null && user.role.name == 'business') {
+              svc.loadNotifications(user.id);
             }
             return svc;
           },
