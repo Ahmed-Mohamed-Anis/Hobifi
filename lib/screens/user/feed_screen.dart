@@ -393,24 +393,26 @@ class _FeedScreenState extends State<FeedScreen> {
     final chips = _searchHistory.isNotEmpty ? _searchHistory : _suggestions;
     final label = _searchHistory.isNotEmpty ? 'Recent' : 'Popular';
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Text(
             label,
             style: theme.textTheme.labelSmall?.copyWith(
               color: colorScheme.onSurface.withValues(alpha: 0.5),
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: chips.map((term) {
-              return InputChip(
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Row(
+            children: chips.map((term) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InputChip(
                 label: Text(term),
                 onPressed: () {
                   _searchController.text = term;
@@ -426,11 +428,11 @@ class _FeedScreenState extends State<FeedScreen> {
                 side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
                 labelStyle: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurface),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-              );
-            }).toList(),
+              ),
+            )).toList(),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
