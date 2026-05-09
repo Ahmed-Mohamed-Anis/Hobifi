@@ -43,7 +43,7 @@ void main() {
   // ── trendingFilterSort ──────────────────────────────────────────────────────
 
   group('trendingFilterSort', () {
-    test('returns top 3 rated descending, excludes zero-review activities', () {
+    test('returns top 5 rated descending, pads with newest unrated when fewer than 5 rated', () {
       final activities = [
         _a(id: 'noReview', rating: 5.0, reviewCount: 0),
         _a(id: 'high', rating: 4.8, reviewCount: 10),
@@ -52,23 +52,25 @@ void main() {
         _a(id: 'extra', rating: 2.0, reviewCount: 2),
       ];
       final result = trendingFilterSort(activities, 'All', null);
-      expect(result.length, 3);
+      expect(result.length, 5);
       expect(result[0].id, 'high');
       expect(result[1].id, 'mid');
       expect(result[2].id, 'low');
+      expect(result[3].id, 'extra');
+      expect(result[4].id, 'noReview'); // padded from unrated
     });
 
-    test('pads with spotsLeft-sorted unrated when fewer than 3 have reviews', () {
+    test('pads with newest unrated when fewer than 5 have reviews', () {
       final activities = [
         _a(id: 'rated', rating: 4.0, reviewCount: 5),
-        _a(id: 'bigSpots', spotsLeft: 8),
-        _a(id: 'smallSpots', spotsLeft: 3),
+        _a(id: 'pad1', spotsLeft: 8),
+        _a(id: 'pad2', spotsLeft: 3),
       ];
       final result = trendingFilterSort(activities, 'All', null);
+      // Only 3 activities total, all 3 returned (1 rated + 2 unrated pads)
       expect(result.length, 3);
       expect(result[0].id, 'rated');
-      expect(result[1].id, 'bigSpots');
-      expect(result[2].id, 'smallSpots');
+      expect(result.map((a) => a.id).toSet(), {'rated', 'pad1', 'pad2'});
     });
 
     test('filters by category before sorting', () {
@@ -117,11 +119,10 @@ void main() {
       expect(result[1].id, 'noCoord');
     });
 
-    test('falls back to take(4) when no location provided', () {
+    test('returns empty list when no location provided', () {
       final activities = List.generate(6, (i) => _a(id: 'a$i'));
       final result = nearbyFilterSort(activities, 'All', null);
-      expect(result.length, 4);
-      expect(result[0].id, 'a0');
+      expect(result, isEmpty);
     });
 
     test('filters by category', () {
