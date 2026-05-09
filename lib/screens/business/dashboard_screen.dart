@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:hobby_haven/services/activity_service.dart';
 import 'package:hobby_haven/services/booking_service.dart';
 import 'package:hobby_haven/services/auth_service.dart';
@@ -10,6 +11,7 @@ import 'package:hobby_haven/models/booking_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:hobby_haven/nav.dart';
 import 'package:hobby_haven/supabase/supabase_config.dart';
+import 'package:hobby_haven/theme.dart';
 import 'package:hobby_haven/widgets/hobifi_stat_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
 import 'package:hobby_haven/widgets/hobifi_shimmer.dart';
@@ -29,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<Map<String, _PerActivityStats>>? _perActivityFuture;
   Future<List<_EarningsTransaction>>? _earningsFuture;
   int _selectedDays = 7; // 7, 30, or 90
+  String _activitySortBy = 'revenue'; // 'revenue' | 'bookings' | 'fillRate'
 
   void _initDashboard(String businessId) {
     _statsFuture = _fetchStats(businessId);
@@ -397,6 +400,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       debugPrint('Dashboard _fetchPerActivityStats failed: $e');
       return <String, _PerActivityStats>{};
     }
+  }
+
+  List<dynamic> _sortedActivities(
+    List activities,
+    Map<String, _PerActivityStats> agg,
+  ) {
+    final sorted = List.from(activities);
+    switch (_activitySortBy) {
+      case 'revenue':
+        sorted.sort((a, b) =>
+            (agg[b.id]?.revenue ?? 0).compareTo(agg[a.id]?.revenue ?? 0));
+      case 'bookings':
+        sorted.sort((a, b) =>
+            (agg[b.id]?.bookings ?? 0).compareTo(agg[a.id]?.bookings ?? 0));
+      case 'fillRate':
+        double rate(a) =>
+            a.maxGuests > 0 ? (a.maxGuests - a.spotsLeft) / a.maxGuests : 0.0;
+        sorted.sort((a, b) => rate(b).compareTo(rate(a)));
+    }
+    return sorted;
   }
 
   String _greeting() {
@@ -978,60 +1001,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Your Activities',
                     onSeeAll: businessActivities.isEmpty
                         ? null
-                        : () => context
-                            .push(AppRoutes.businessCreateActivity),
+                        : () => context.push(AppRoutes.businessCreateActivity),
                   ),
+                  // Sort control tabs
+                  if (businessActivities.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Row(
+                        children: [
+                          for (final entry in {
+                            'revenue': 'Revenue',
+                            'bookings': 'Bookings',
+                            'fillRate': 'Fill Rate',
+                          }.entries)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: HobifiChip(
+                                label: entry.value,
+                                isSelected: _activitySortBy == entry.key,
+                                onTap: () => setState(() => _activitySortBy = entry.key),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   if (businessActivities.isEmpty)
                     _buildEmptyActivitiesCTA(context)
                   else
                     FutureBuilder<Map<String, _PerActivityStats>>(
                       future: _perActivityFuture,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting &&
+                        if (snapshot.connectionState == ConnectionState.waiting &&
                             snapshot.data == null) {
                           return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Column(
                               children: List.generate(
-                                2,
+                                3,
                                 (_) => Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.only(bottom: 12),
                                   child: HobifiShimmer(
-                                      width: double.infinity,
-                                      height: 100,
-                                      borderRadius: 16),
+                                      width: double.infinity, height: 100, borderRadius: 16),
                                 ),
                               ),
                             ),
                           );
                         }
-                        final agg = snapshot.data ??
-                            const <String, _PerActivityStats>{};
-                        final activitiesToShow =
-                            businessActivities.take(3).toList();
+                        final agg = snapshot.data ?? const <String, _PerActivityStats>{};
+                        final activitiesToShow = _sortedActivities(businessActivities, agg);
                         return Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Column(
                             children: activitiesToShow.map((activity) {
                               final stats = agg[activity.id];
-                              final bookingsCount = stats?.bookings ?? 0;
-                              final revenueVal = stats?.revenue ?? 0.0;
-                              // Estimate fill rate from bookings vs total capacity
-                              final totalCapacity =
-                                  bookingsCount + activity.spotsLeft;
-                              final fillRate = totalCapacity > 0
-                                  ? (bookingsCount / totalCapacity)
+                              final fillRate = activity.maxGuests > 0
+                                  ? ((activity.maxGuests - activity.spotsLeft) /
+                                          activity.maxGuests)
                                       .clamp(0.0, 1.0)
                                   : 0.0;
                               return _ActivityBreakdownCard(
                                 title: activity.title,
-                                bookings: bookingsCount,
-                                revenue: revenueVal,
+                                imageUrl: activity.imageUrl,
+                                bookings: stats?.bookings ?? 0,
+                                revenue: stats?.revenue ?? 0.0,
                                 fillRate: fillRate,
+                                avgRating: stats?.avgRating ?? 0.0,
                                 onTap: () {
                                   final loc = context.namedLocation(
                                     'business-activity',
@@ -1416,16 +1450,20 @@ class _EarningsRow extends StatelessWidget {
 
 class _ActivityBreakdownCard extends StatelessWidget {
   final String title;
+  final String? imageUrl;
   final int bookings;
   final double revenue;
   final double fillRate;
+  final double avgRating;
   final VoidCallback? onTap;
 
   const _ActivityBreakdownCard({
     required this.title,
+    this.imageUrl,
     required this.bookings,
     required this.revenue,
     required this.fillRate,
+    required this.avgRating,
     this.onTap,
   });
 
@@ -1455,64 +1493,76 @@ class _ActivityBreakdownCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                if (imageUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl!,
+                      width: 52, height: 52, fit: BoxFit.cover,
+                      placeholder: (_, __) => HobifiShimmer.box(52, 52),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 52, height: 52,
+                        color: colorScheme.surfaceContainerHighest,
+                        child: Icon(Icons.image_rounded, color: colorScheme.outline, size: 20),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'EGP ${revenue.toStringAsFixed(0)}',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w800,
+                  ),
+                if (imageUrl != null) const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('EGP ${revenue.toStringAsFixed(0)}',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: colorScheme.primary, fontWeight: FontWeight.w800)),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.confirmation_number_outlined,
-                      size: 14,
-                      color: colorScheme.onSurface.withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$bookings bookings',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.confirmation_number_outlined, size: 13,
+                            color: colorScheme.onSurface.withValues(alpha: 0.4)),
+                          const SizedBox(width: 3),
+                          Text('$bookings bookings',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface.withValues(alpha: 0.5))),
+                          const Spacer(),
+                          if (avgRating > 0) ...[
+                            Icon(Icons.star_rounded, size: 13, color: colorScheme.tertiary),
+                            const SizedBox(width: 2),
+                            Text(avgRating.toStringAsFixed(1),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.6))),
+                          ] else ...[
+                            Text('${(fillRate * 100).toStringAsFixed(0)}% full',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.5))),
+                          ],
+                        ],
                       ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${(fillRate * 100).toStringAsFixed(0)}% full',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      const SizedBox(height: 6),
+                      LinearProgressIndicator(
+                        value: fillRate,
+                        borderRadius: BorderRadius.circular(4),
+                        backgroundColor: colorScheme.outline.withValues(alpha: 0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.lime),
+                        minHeight: 6,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: fillRate,
-                  borderRadius: BorderRadius.circular(4),
-                  backgroundColor:
-                      colorScheme.outline.withValues(alpha: 0.1),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF9BC53D)), // lime
-                  minHeight: 6,
+                    ],
+                  ),
                 ),
               ],
             ),
