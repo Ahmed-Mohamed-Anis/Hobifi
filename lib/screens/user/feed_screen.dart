@@ -12,6 +12,7 @@ import 'package:hobby_haven/services/rating_service.dart';
 import 'package:hobby_haven/models/booking_model.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:hobby_haven/services/location_service.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:hobby_haven/utils/distance_util.dart';
 import 'package:hobby_haven/widgets/hobifi_card.dart';
 import 'package:hobby_haven/widgets/hobifi_chip.dart';
@@ -429,24 +430,35 @@ class _FeedScreenState extends State<FeedScreen> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: popularActivities.map((activity) => Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: HobifiCard(
-                  activity: activity,
-                  isLiked: likeService.isLiked(activity.id),
-                  onTap: () => context.push('${AppRoutes.activity}/${activity.id}'),
-                  onLikeTap: () {
-                    final userId = auth.currentUser?.id;
-                    if (userId != null) likeService.toggleLike(userId, activity.id);
-                  },
-                  distanceLabel: _distanceLabel(activity, userLocation),
-                ),
-              )).toList(),
+          if (userLocation == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: HobifiEmptyState(
+                icon: Icons.location_off_rounded,
+                title: 'Enable location to see activities near you',
+                actionLabel: 'Enable Location',
+                onAction: () => Geolocator.openAppSettings(),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: popularActivities.map((activity) => Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: HobifiCard(
+                    activity: activity,
+                    isLiked: likeService.isLiked(activity.id),
+                    onTap: () => context.push('${AppRoutes.activity}/${activity.id}'),
+                    onLikeTap: () {
+                      final userId = auth.currentUser?.id;
+                      if (userId != null) likeService.toggleLike(userId, activity.id);
+                    },
+                    distanceLabel: _distanceLabel(activity, userLocation),
+                  ),
+                )).toList(),
+              ),
             ),
-          ),
 
           // Weekend section (if activities available)
           if (weekendActivities.isNotEmpty) ...[

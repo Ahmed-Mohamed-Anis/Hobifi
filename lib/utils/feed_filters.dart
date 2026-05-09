@@ -22,13 +22,13 @@ List<ActivityModel> trendingFilterSort(
   final rated = filtered.where((a) => a.reviewCount > 0).toList()
     ..sort((a, b) => b.rating.compareTo(a.rating));
 
-  if (rated.length >= 3) return rated.take(3).toList();
+  if (rated.length >= 5) return rated.take(5).toList();
 
   final ratedIds = rated.map((a) => a.id).toSet();
-  final unrated = filtered.where((a) => !ratedIds.contains(a.id)).toList()
-    ..sort((a, b) => b.spotsLeft.compareTo(a.spotsLeft));
+  final newest = filtered.where((a) => !ratedIds.contains(a.id)).toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  return [...rated, ...unrated].take(3).toList();
+  return [...rated, ...newest].take(5).toList();
 }
 
 List<ActivityModel> nearbyFilterSort(
@@ -38,7 +38,7 @@ List<ActivityModel> nearbyFilterSort(
 ) {
   final filtered = _byCat(all, category);
 
-  if (userLocation == null) return filtered.take(4).toList();
+  if (userLocation == null) return [];
 
   final withCoords = filtered.where((a) => a.latitude != null && a.longitude != null).toList()
     ..sort((a, b) {
